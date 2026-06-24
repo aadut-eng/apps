@@ -772,7 +772,7 @@
     els.editor.disabled = true;
     els.editor.value = `Loading ${file.name}...`;
     els.highlight.textContent = els.editor.value;
-    els.minimap.textContent = "";
+    if (els.minimap) els.minimap.textContent = "";
     updateLineNumbers(els.editor.value);
     updateStatus();
   }
@@ -813,7 +813,7 @@
     }
     const trailing = code.endsWith("\n") ? " " : "";
     els.highlight.innerHTML = html + trailing;
-    els.minimap.textContent = code.slice(0, 60000);
+    if (els.minimap) els.minimap.textContent = code.slice(0, 60000);
     updateLineNumbers(code);
     syncScroll();
   }
@@ -845,8 +845,10 @@
 
     const maxScroll = Math.max(1, els.editor.scrollHeight - els.editor.clientHeight);
     const ratio = els.editor.scrollTop / maxScroll;
-    const miniMax = Math.max(0, els.minimap.scrollHeight - els.minimap.clientHeight);
-    els.minimap.scrollTop = ratio * miniMax;
+    if (els.minimap) {
+      const miniMax = Math.max(0, els.minimap.scrollHeight - els.minimap.clientHeight);
+      els.minimap.scrollTop = ratio * miniMax;
+    }
   }
 
   function updateStatus() {
@@ -1701,7 +1703,9 @@
   }
 
   function handleEditorDoubleClick() {
-    window.setTimeout(selectExactWordFromCurrentSelection, 0);
+    [0, 16, 50].forEach((delay) => {
+      window.setTimeout(selectExactWordFromCurrentSelection, delay);
+    });
   }
 
   function selectExactWordFromCurrentSelection() {
@@ -1717,17 +1721,21 @@
     while (end > start && !isExactWordCharacter(value[end - 1])) end -= 1;
 
     if (start === end) {
-      const candidate = Math.min(start, value.length - 1);
-      if (isExactWordCharacter(value[candidate])) {
-        start = candidate;
-        end = candidate + 1;
-      } else if (candidate > 0 && isExactWordCharacter(value[candidate - 1])) {
-        start = candidate - 1;
-        end = candidate;
-      } else {
+      const collapsed = getCollapsedWordRange(start, value);
+      if (!collapsed) {
         updateStatus();
         return;
       }
+      start = collapsed.start;
+      end = collapsed.end;
+    } else {
+      const exactRange = getNearestWordRangeInSelection(value, start, end, (originalStart + originalEnd) / 2);
+      if (!exactRange) {
+        updateStatus();
+        return;
+      }
+      start = exactRange.start;
+      end = exactRange.end;
     }
 
     while (start > 0 && isExactWordCharacter(value[start - 1])) start -= 1;
@@ -1737,6 +1745,31 @@
       els.editor.setSelectionRange(start, end);
       updateStatus();
     }
+  }
+
+  function getCollapsedWordRange(offset, value) {
+    const candidate = Math.min(Math.max(0, offset), value.length - 1);
+    if (isExactWordCharacter(value[candidate])) return { start: candidate, end: candidate + 1 };
+    if (candidate > 0 && isExactWordCharacter(value[candidate - 1])) return { start: candidate - 1, end: candidate };
+    return null;
+  }
+
+  function getNearestWordRangeInSelection(value, start, end, targetOffset) {
+    const ranges = [];
+    let index = start;
+    while (index < end) {
+      while (index < end && !isExactWordCharacter(value[index])) index += 1;
+      if (index >= end) break;
+      const wordStart = index;
+      while (index < end && isExactWordCharacter(value[index])) index += 1;
+      ranges.push({ start: wordStart, end: index });
+    }
+    if (!ranges.length) return null;
+    return ranges.reduce((best, range) => {
+      const currentDistance = Math.abs((range.start + range.end) / 2 - targetOffset);
+      const bestDistance = Math.abs((best.start + best.end) / 2 - targetOffset);
+      return currentDistance < bestDistance ? range : best;
+    }, ranges[0]);
   }
 
   function isExactWordCharacter(character) {
