@@ -827,6 +827,11 @@ button {
   color: var(--accent-2);
 }
 
+.text-style {
+  color: inherit;
+  line-height: 1;
+}
+
 .keyword-mark {
   border-radius: 3px;
   padding: 0 1px;

@@ -210,7 +210,9 @@
     els.editor.addEventListener("input", () => {
       const file = getActiveFile();
       if (!file) return;
-      file.content = els.editor.value;
+      const nextValue = els.editor.value;
+      adjustTextStylesForContentChange(file, file.content, nextValue);
+      file.content = nextValue;
       file.dirty = file.content !== file.savedContent;
       file.decorationCache = null;
       updateLineNumbers(file.content);
@@ -332,6 +334,7 @@
         loaded: entry.loaded !== false,
         tasks: Array.isArray(entry.tasks) ? entry.tasks : [],
         keywordMarks: Array.isArray(entry.keywordMarks) ? entry.keywordMarks : [],
+        textStyles: Array.isArray(entry.textStyles) ? entry.textStyles : [],
         order: Number.isFinite(entry.order) ? entry.order : undefined
       }));
       normalizeFileOrders();
@@ -371,6 +374,7 @@
       loaded: file.loaded !== false,
       tasks: file.tasks || [],
       keywordMarks: file.keywordMarks || [],
+      textStyles: file.textStyles || [],
       order: file.order
     }));
     const payload = {
@@ -394,26 +398,117 @@
 
   const persistSoon = debounce(persistWorkspace, 250);
 
-  function addFile({ path, content, savedContent, handle, nativePath, loaded, tasks, keywordMarks, order }) {
+  function addFile({ path, content, savedContent, handle, nativePath, loaded, tasks, keywordMarks, textStyles, order }) {
     const cleanPath = normalizePath(path || "untitled.txt");
     const existing = state.files.get(cleanPath);
+    const fileContent = content || "";
     const file = {
       path: cleanPath,
       name: basename(cleanPath),
       language: languageForPath(cleanPath),
-      content: content || "",
-      savedContent: typeof savedContent === "string" ? savedContent : content || "",
+      content: fileContent,
+      savedContent: typeof savedContent === "string" ? savedContent : fileContent,
       dirty: false,
       handle: handle || (existing && existing.handle) || null,
       nativePath: nativePath || (existing && existing.nativePath) || "",
       loaded: loaded !== false,
       tasks: Array.isArray(tasks) ? tasks : (existing && existing.tasks) || [],
       keywordMarks: Array.isArray(keywordMarks) ? keywordMarks : (existing && existing.keywordMarks) || [],
+      textStyles: normalizeTextStyles(Array.isArray(textStyles) ? textStyles : (existing && existing.textStyles) || [], fileContent.length),
       order: Number.isFinite(order) ? order : (existing && Number.isFinite(existing.order) ? existing.order : nextFileOrder())
     };
     file.dirty = file.content !== file.savedContent;
     state.files.set(cleanPath, file);
     return file;
+  }
+
+  function normalizeTextStyles(styles, maxLength) {
+    const limit = Math.max(0, maxLength);
+    return (styles || []).map((style) => {
+      const start = clampRangeOffset(style.start, limit);
+      const end = clampRangeOffset(style.end, limit);
+      const normalized = {
+        start: Math.min(start, end),
+        end: Math.max(start, end)
+      };
+      if (Object.prototype.hasOwnProperty.call(style, "fontSize")) normalized.fontSize = clampFontSize(style.fontSize);
+      if (Object.prototype.hasOwnProperty.call(style, "bold")) normalized.bold = Boolean(style.bold);
+      if (Object.prototype.hasOwnProperty.call(style, "italic")) normalized.italic = Boolean(style.italic);
+      return normalized;
+    }).filter((style) => style.end > style.start && hasTextStyleProperties(style));
+  }
+
+  function clampRangeOffset(value, maxLength) {
+    const offset = Number.isFinite(Number(value)) ? Math.round(Number(value)) : 0;
+    return Math.min(maxLength, Math.max(0, offset));
+  }
+
+  function hasTextStyleProperties(style) {
+    return Object.prototype.hasOwnProperty.call(style, "fontSize") ||
+      Object.prototype.hasOwnProperty.call(style, "bold") ||
+      Object.prototype.hasOwnProperty.call(style, "italic");
+  }
+
+  function adjustTextStylesForContentChange(file, previous, next) {
+    if (!file || !Array.isArray(file.textStyles) || !file.textStyles.length || previous === next) return;
+    const edit = findTextEdit(previous, next);
+    if (!edit) return;
+    file.textStyles = normalizeTextStyles(file.textStyles.map((style) => adjustTextStyleForEdit(style, edit)).filter(Boolean), next.length);
+  }
+
+  function findTextEdit(previous, next) {
+    let start = 0;
+    while (start < previous.length && start < next.length && previous[start] === next[start]) start += 1;
+
+    let oldEnd = previous.length;
+    let newEnd = next.length;
+    while (oldEnd > start && newEnd > start && previous[oldEnd - 1] === next[newEnd - 1]) {
+      oldEnd -= 1;
+      newEnd -= 1;
+    }
+
+    return {
+      start,
+      oldEnd,
+      newEnd,
+      delta: next.length - previous.length
+    };
+  }
+
+  function adjustTextStyleForEdit(style, edit) {
+    const nextStyle = { ...style };
+    if (edit.oldEnd === edit.start) {
+      if (style.end <= edit.start) return nextStyle;
+      if (style.start >= edit.start) {
+        nextStyle.start += edit.delta;
+        nextStyle.end += edit.delta;
+        return nextStyle;
+      }
+      nextStyle.end += edit.delta;
+      return nextStyle;
+    }
+
+    if (style.end <= edit.start) return nextStyle;
+    if (style.start >= edit.oldEnd) {
+      nextStyle.start += edit.delta;
+      nextStyle.end += edit.delta;
+      return nextStyle;
+    }
+
+    if (style.start < edit.start && style.end > edit.oldEnd) {
+      nextStyle.end += edit.delta;
+      return nextStyle;
+    }
+    if (style.start < edit.start) {
+      nextStyle.end = edit.start;
+      return nextStyle;
+    }
+    if (style.end > edit.oldEnd) {
+      nextStyle.start = edit.newEnd;
+      nextStyle.end += edit.delta;
+      return nextStyle;
+    }
+    return null;
   }
 
   function nextFileOrder() {
@@ -689,13 +784,14 @@
     const code = els.editor.value;
     const language = file ? file.language : "text";
     const marksKey = JSON.stringify(file ? file.keywordMarks || [] : []);
+    const textStylesKey = JSON.stringify(file ? file.textStyles || [] : []);
     const findKey = getFindDecorationKey();
     let html;
-    if (file && file.decorationCache && file.decorationCache.content === code && file.decorationCache.language === language && file.decorationCache.marksKey === marksKey && file.decorationCache.findKey === findKey) {
+    if (file && file.decorationCache && file.decorationCache.content === code && file.decorationCache.language === language && file.decorationCache.marksKey === marksKey && file.decorationCache.textStylesKey === textStylesKey && file.decorationCache.findKey === findKey) {
       html = file.decorationCache.html;
     } else {
       html = code.length > 250000 ? decorateText(code) : highlightCode(code, language);
-      if (file) file.decorationCache = { content: code, language, marksKey, findKey, html };
+      if (file) file.decorationCache = { content: code, language, marksKey, textStylesKey, findKey, html };
     }
     const trailing = code.endsWith("\n") ? " " : "";
     els.highlight.innerHTML = html + trailing;
@@ -752,6 +848,7 @@
     els.statusCursor.textContent = `Ln ${cursor.line}, Col ${cursor.column}`;
     els.statusLanguage.textContent = file.language;
     els.statusSize.textContent = `${bytes.toLocaleString()} bytes`;
+    syncFormatControls();
   }
 
   function cursorPosition(text, offset) {
@@ -1075,7 +1172,8 @@
       savedContent: file.content,
       order: file.order + 0.5,
       tasks: file.tasks ? file.tasks.map((task) => ({ ...task, id: `${Date.now()}-${Math.random().toString(16).slice(2)}` })) : [],
-      keywordMarks: file.keywordMarks ? file.keywordMarks.map((mark) => ({ ...mark })) : []
+      keywordMarks: file.keywordMarks ? file.keywordMarks.map((mark) => ({ ...mark })) : [],
+      textStyles: file.textStyles ? file.textStyles.map((style) => ({ ...style })) : []
     });
     normalizeFileOrders();
     activateFile(path);
@@ -1345,6 +1443,18 @@
   }
 
   function changeEditorFontSize(delta) {
+    const selection = getEditorSelectionRange();
+    if (selection) {
+      const current = getTextStyleAtOffset(selection.start).fontSize;
+      const nextSize = clampFontSize(current + delta);
+      if (nextSize === current) {
+        showToast(delta > 0 ? "Selection at maximum size" : "Selection at minimum size");
+        return;
+      }
+      applyTextStyleToSelection({ fontSize: nextSize }, `Selection font size ${nextSize}px`);
+      return;
+    }
+
     const nextSize = clampFontSize(state.editorFontSize + delta);
     if (nextSize === state.editorFontSize) {
       showToast(delta > 0 ? "Maximum font size" : "Minimum font size");
@@ -1356,18 +1466,38 @@
   }
 
   function resetEditorFontSize() {
+    const selection = getEditorSelectionRange();
+    if (selection) {
+      applyTextStyleToSelection({ fontSize: state.editorFontSize }, "Selection font size reset");
+      return;
+    }
+
     state.editorFontSize = DEFAULT_FONT_SIZE;
     applyEditorTypography();
     showToast("Font size reset");
   }
 
   function toggleEditorBold() {
+    const selection = getEditorSelectionRange();
+    if (selection) {
+      const nextValue = !getTextStyleAtOffset(selection.start).bold;
+      applyTextStyleToSelection({ bold: nextValue }, nextValue ? "Selection bold on" : "Selection bold off");
+      return;
+    }
+
     state.editorBold = !state.editorBold;
     applyEditorTypography();
     showToast(state.editorBold ? "Bold on" : "Bold off");
   }
 
   function toggleEditorItalic() {
+    const selection = getEditorSelectionRange();
+    if (selection) {
+      const nextValue = !getTextStyleAtOffset(selection.start).italic;
+      applyTextStyleToSelection({ italic: nextValue }, nextValue ? "Selection italic on" : "Selection italic off");
+      return;
+    }
+
     state.editorItalic = !state.editorItalic;
     applyEditorTypography();
     showToast(state.editorItalic ? "Italic on" : "Italic off");
@@ -1384,12 +1514,92 @@
     els.italicButton.setAttribute("aria-pressed", state.editorItalic ? "true" : "false");
     updateLineNumbers(els.editor.value);
     syncScroll();
+    syncFormatControls();
     if (shouldPersist) persistWorkspace();
   }
 
   function clampFontSize(value) {
     const size = Number.isFinite(Number(value)) ? Math.round(Number(value)) : DEFAULT_FONT_SIZE;
     return Math.min(MAX_FONT_SIZE, Math.max(MIN_FONT_SIZE, size));
+  }
+
+  function getEditorSelectionRange() {
+    if (document.activeElement !== els.editor) return null;
+    const start = Math.min(els.editor.selectionStart, els.editor.selectionEnd);
+    const end = Math.max(els.editor.selectionStart, els.editor.selectionEnd);
+    return end > start ? { start, end } : null;
+  }
+
+  function applyTextStyleToSelection(patch, message) {
+    const file = getActiveFile();
+    const selection = getEditorSelectionRange();
+    if (!file || !selection) {
+      showToast("Select text first");
+      return;
+    }
+
+    const style = {
+      start: selection.start,
+      end: selection.end
+    };
+    if (Object.prototype.hasOwnProperty.call(patch, "fontSize")) style.fontSize = clampFontSize(patch.fontSize);
+    if (Object.prototype.hasOwnProperty.call(patch, "bold")) style.bold = Boolean(patch.bold);
+    if (Object.prototype.hasOwnProperty.call(patch, "italic")) style.italic = Boolean(patch.italic);
+    if (!hasTextStyleProperties(style)) return;
+
+    file.textStyles = normalizeTextStyles([...(file.textStyles || []), style], file.content.length).slice(-400);
+    file.decorationCache = null;
+    updateEditorDecorations();
+    restoreEditorSelection(selection.start, selection.end);
+    syncFormatControls();
+    persistSoon();
+    showToast(message);
+  }
+
+  function restoreEditorSelection(start, end) {
+    try {
+      els.editor.focus({ preventScroll: true });
+    } catch (error) {
+      els.editor.focus();
+    }
+    els.editor.setSelectionRange(start, end);
+  }
+
+  function syncFormatControls() {
+    const style = getCurrentFormatStyle();
+    els.boldButton.classList.toggle("active", style.bold);
+    els.boldButton.setAttribute("aria-pressed", style.bold ? "true" : "false");
+    els.italicButton.classList.toggle("active", style.italic);
+    els.italicButton.setAttribute("aria-pressed", style.italic ? "true" : "false");
+  }
+
+  function getCurrentFormatStyle() {
+    const selection = getEditorSelectionRange();
+    if (selection) return getTextStyleAtOffset(selection.start);
+    return {
+      fontSize: state.editorFontSize,
+      bold: state.editorBold,
+      italic: state.editorItalic
+    };
+  }
+
+  function getTextStyleAtOffset(offset) {
+    const file = getActiveFile();
+    const safeOffset = Math.max(0, Math.min(offset, els.editor.value.length));
+    const style = {
+      fontSize: state.editorFontSize,
+      bold: state.editorBold,
+      italic: state.editorItalic
+    };
+    if (!file || !Array.isArray(file.textStyles)) return style;
+
+    file.textStyles.forEach((entry) => {
+      if (entry.start > safeOffset || entry.end <= safeOffset) return;
+      if (Object.prototype.hasOwnProperty.call(entry, "fontSize")) style.fontSize = clampFontSize(entry.fontSize);
+      if (Object.prototype.hasOwnProperty.call(entry, "bold")) style.bold = Boolean(entry.bold);
+      if (Object.prototype.hasOwnProperty.call(entry, "italic")) style.italic = Boolean(entry.italic);
+    });
+    return style;
   }
 
   function setTheme(theme, shouldPersist = true) {
@@ -1539,6 +1749,7 @@
   function applyEditorValue(value, cursor) {
     const file = getActiveFile();
     if (!file) return;
+    adjustTextStylesForContentChange(file, file.content, value);
     els.editor.value = value;
     const safeCursor = Math.min(value.length, Math.max(0, cursor));
     els.editor.setSelectionRange(safeCursor, safeCursor);
@@ -1801,7 +2012,8 @@
       exportedAt: new Date().toISOString(),
       files: Array.from(state.files.values()).map((file) => ({
         path: file.path,
-        content: file.content
+        content: file.content,
+        textStyles: file.textStyles || []
       }))
     };
     const content = JSON.stringify(payload, null, 2);
@@ -1866,7 +2078,8 @@
       const entries = payload.files.map((entry) => ({
         path: entry.path,
         content: entry.content || "",
-        savedContent: entry.content || ""
+        savedContent: entry.content || "",
+        textStyles: Array.isArray(entry.textStyles) ? entry.textStyles : []
       }));
       replaceWorkspace(entries);
       showToast("Workspace imported");
@@ -1991,6 +2204,30 @@
   }
 
   function decorateText(value, baseOffset = 0) {
+    const textStyles = getTextStylesForRange(baseOffset, baseOffset + value.length);
+    if (textStyles.length) {
+      let output = "";
+      const boundaries = new Set([0, value.length]);
+      textStyles.forEach((style) => {
+        boundaries.add(Math.max(0, style.start - baseOffset));
+        boundaries.add(Math.min(value.length, style.end - baseOffset));
+      });
+      const points = Array.from(boundaries).sort((a, b) => a - b);
+      for (let index = 0; index < points.length - 1; index += 1) {
+        const start = points[index];
+        const end = points[index + 1];
+        if (end <= start) continue;
+        const absoluteStart = baseOffset + start;
+        const segment = decorateFindAndKeyword(value.slice(start, end), absoluteStart);
+        const style = combineTextStylesForRange(textStyles, absoluteStart, baseOffset + end);
+        output += wrapTextStyle(segment, style);
+      }
+      return output;
+    }
+    return decorateFindAndKeyword(value, baseOffset);
+  }
+
+  function decorateFindAndKeyword(value, baseOffset = 0) {
     const findHighlights = getFindHighlightsForRange(baseOffset, baseOffset + value.length);
     if (findHighlights.length) {
       let output = "";
@@ -2009,6 +2246,32 @@
       return output;
     }
     return decorateKeywordMarks(value);
+  }
+
+  function getTextStylesForRange(start, end) {
+    const file = getActiveFile();
+    if (!file || !Array.isArray(file.textStyles) || start >= end) return [];
+    return file.textStyles.filter((style) => style.end > start && style.start < end);
+  }
+
+  function combineTextStylesForRange(styles, start, end) {
+    const combined = {};
+    styles.forEach((style) => {
+      if (style.end <= start || style.start >= end) return;
+      if (Object.prototype.hasOwnProperty.call(style, "fontSize")) combined.fontSize = clampFontSize(style.fontSize);
+      if (Object.prototype.hasOwnProperty.call(style, "bold")) combined.bold = Boolean(style.bold);
+      if (Object.prototype.hasOwnProperty.call(style, "italic")) combined.italic = Boolean(style.italic);
+    });
+    return combined;
+  }
+
+  function wrapTextStyle(content, style) {
+    if (!hasTextStyleProperties(style)) return content;
+    const rules = [];
+    if (Object.prototype.hasOwnProperty.call(style, "fontSize")) rules.push(`font-size:${clampFontSize(style.fontSize)}px`);
+    if (Object.prototype.hasOwnProperty.call(style, "bold")) rules.push(`font-weight:${style.bold ? "700" : "400"}`);
+    if (Object.prototype.hasOwnProperty.call(style, "italic")) rules.push(`font-style:${style.italic ? "italic" : "normal"}`);
+    return `<span class="text-style" style="${rules.join(";")}">${content}</span>`;
   }
 
   function decorateKeywordMarks(value) {
