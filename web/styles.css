@@ -784,6 +784,18 @@ button {
   color: inherit;
 }
 
+.find-match {
+  border-radius: 3px;
+  background: rgba(255, 209, 102, 0.34);
+  box-shadow: inset 0 0 0 1px rgba(255, 209, 102, 0.36);
+  color: inherit;
+}
+
+.find-match.active {
+  background: rgba(255, 107, 90, 0.48);
+  box-shadow: inset 0 0 0 1px rgba(255, 107, 90, 0.68);
+}
+
 .mark-yellow {
   background: rgba(248, 197, 85, 0.36);
 }

@@ -201,7 +201,7 @@
       requestEditorDecorations();
       renderTabs();
       renderTree();
-      updateFindMatches();
+      updateFindMatches({ decorate: false });
       updateStatus();
       persistSoon();
     });
@@ -623,8 +623,8 @@
     if (els.editor.value !== file.content) {
       els.editor.value = file.content;
     }
+    updateFindMatches({ decorate: false });
     updateEditorDecorations();
-    updateFindMatches();
     updateStatus();
     renderTasks();
   }
@@ -663,12 +663,13 @@
     const code = els.editor.value;
     const language = file ? file.language : "text";
     const marksKey = JSON.stringify(file ? file.keywordMarks || [] : []);
+    const findKey = getFindDecorationKey();
     let html;
-    if (file && file.decorationCache && file.decorationCache.content === code && file.decorationCache.language === language && file.decorationCache.marksKey === marksKey) {
+    if (file && file.decorationCache && file.decorationCache.content === code && file.decorationCache.language === language && file.decorationCache.marksKey === marksKey && file.decorationCache.findKey === findKey) {
       html = file.decorationCache.html;
     } else {
       html = code.length > 250000 ? decorateText(code) : highlightCode(code, language);
-      if (file) file.decorationCache = { content: code, language, marksKey, html };
+      if (file) file.decorationCache = { content: code, language, marksKey, findKey, html };
     }
     const trailing = code.endsWith("\n") ? " " : "";
     els.highlight.innerHTML = html + trailing;
@@ -1335,6 +1336,7 @@
 
   function closeFind() {
     els.findBar.hidden = true;
+    updateEditorDecorations();
     els.editor.focus();
   }
 
@@ -1348,12 +1350,13 @@
     else restoreFindControlFocus(focusTarget);
   }
 
-  function updateFindMatches() {
+  function updateFindMatches(options = {}) {
     const query = els.findInput.value;
     state.findMatches = [];
     state.findIndex = -1;
     if (!query) {
       updateFindCount();
+      if (options.decorate !== false) updateEditorDecorations();
       return;
     }
     const content = els.editor.value;
@@ -1365,6 +1368,7 @@
       index = haystack.indexOf(needle, index + Math.max(1, query.length));
     }
     updateFindCount();
+    if (options.decorate !== false) updateEditorDecorations();
   }
 
   function selectFindMatch(index, options = {}) {
@@ -1383,7 +1387,13 @@
     els.editor.scrollTop = estimateScrollForOffset(match.start);
     syncScroll();
     updateFindCount();
+    updateEditorDecorations();
     restoreFindControlFocus(focusTarget);
+  }
+
+  function getFindDecorationKey() {
+    if (els.findBar.hidden || !els.findInput.value || !state.findMatches.length) return "";
+    return `${els.findInput.value}\u0000${state.findIndex}\u0000${state.findMatches.length}`;
   }
 
   function getFindControlFocus() {
@@ -1787,12 +1797,12 @@
     let lastIndex = 0;
     code.replace(regex, (match, ...args) => {
       const offset = args[args.length - 2];
-      output += decorateText(code.slice(lastIndex, offset));
-      output += `<span class="${classify(match, offset, code)}">${decorateText(match)}</span>`;
+      output += decorateText(code.slice(lastIndex, offset), lastIndex);
+      output += `<span class="${classify(match, offset, code)}">${decorateText(match, offset)}</span>`;
       lastIndex = offset + match.length;
       return match;
     });
-    output += decorateText(code.slice(lastIndex));
+    output += decorateText(code.slice(lastIndex), lastIndex);
     return output;
   }
 
@@ -1861,10 +1871,13 @@
   }
 
   function highlightMarkdown(code) {
+    let offset = 0;
     return code.split("\n").map((line) => {
-      if (/^#{1,6}\s/.test(line)) return `<span class="token-heading">${decorateText(line)}</span>`;
-      let output = decorateText(line);
-      if (!getKeywordMarks().length) {
+      const lineOffset = offset;
+      offset += line.length + 1;
+      if (/^#{1,6}\s/.test(line)) return `<span class="token-heading">${decorateText(line, lineOffset)}</span>`;
+      let output = decorateText(line, lineOffset);
+      if (!getKeywordMarks().length && !hasVisibleFindHighlights()) {
         output = output.replace(/(`[^`]+`)/g, '<span class="token-string">$1</span>');
         output = output.replace(/(\*\*[^*]+\*\*)/g, '<span class="token-emphasis">$1</span>');
         output = output.replace(/^(\s*[-*]\s)/, '<span class="token-keyword">$1</span>');
@@ -1873,7 +1886,28 @@
     }).join("\n");
   }
 
-  function decorateText(value) {
+  function decorateText(value, baseOffset = 0) {
+    const findHighlights = getFindHighlightsForRange(baseOffset, baseOffset + value.length);
+    if (findHighlights.length) {
+      let output = "";
+      let lastIndex = 0;
+      findHighlights.forEach((match) => {
+        const start = Math.max(0, match.start - baseOffset);
+        const end = Math.min(value.length, match.end - baseOffset);
+        if (end <= lastIndex) return;
+        const safeStart = Math.max(lastIndex, start);
+        output += decorateKeywordMarks(value.slice(lastIndex, safeStart));
+        const className = match.index === state.findIndex ? "find-match active" : "find-match";
+        output += `<span class="${className}">${decorateKeywordMarks(value.slice(safeStart, end))}</span>`;
+        lastIndex = end;
+      });
+      output += decorateKeywordMarks(value.slice(lastIndex));
+      return output;
+    }
+    return decorateKeywordMarks(value);
+  }
+
+  function decorateKeywordMarks(value) {
     const marks = getKeywordMarks();
     if (!marks.length || !value) return escapeHtml(value);
     const pattern = marks.map((mark) => escapeRegExp(mark.text)).join("|");
@@ -1889,6 +1923,17 @@
     });
     output += escapeHtml(value.slice(lastIndex));
     return output;
+  }
+
+  function getFindHighlightsForRange(start, end) {
+    if (els.findBar.hidden || !els.findInput.value || !state.findMatches.length || start >= end) return [];
+    return state.findMatches
+      .map((match, index) => ({ ...match, index }))
+      .filter((match) => match.end > start && match.start < end);
+  }
+
+  function hasVisibleFindHighlights() {
+    return !els.findBar.hidden && Boolean(els.findInput.value) && state.findMatches.length > 0;
   }
 
   function getKeywordMarks() {
