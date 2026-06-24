@@ -159,6 +159,8 @@
     { id: "rename-file", title: "Rename File", meta: "File", run: renameActiveFile },
     { id: "duplicate-file", title: "Duplicate File", meta: "File", run: duplicateActiveFile },
     { id: "delete-file", title: "Delete File", meta: "File", run: deleteActiveFile },
+    { id: "move-file-up", title: "Move File Up", meta: "Project", run: () => moveActiveFile(-1) },
+    { id: "move-file-down", title: "Move File Down", meta: "Project", run: () => moveActiveFile(1) },
     { id: "find", title: "Find and Replace", meta: "Edit", run: openFind },
     { id: "toggle-tasks", title: "Toggle Page Tasks", meta: "Page", run: toggleTasks },
     { id: "mark-keyword", title: "Color Selected Keyword", meta: "Page", run: markSelectedKeyword },
@@ -307,8 +309,10 @@
         nativePath: entry.nativePath || "",
         loaded: entry.loaded !== false,
         tasks: Array.isArray(entry.tasks) ? entry.tasks : [],
-        keywordMarks: Array.isArray(entry.keywordMarks) ? entry.keywordMarks : []
+        keywordMarks: Array.isArray(entry.keywordMarks) ? entry.keywordMarks : [],
+        order: Number.isFinite(entry.order) ? entry.order : undefined
       }));
+      normalizeFileOrders();
       state.tabs = saved.tabs && saved.tabs.length ? saved.tabs.filter((path) => state.files.has(path)) : [];
       state.activePath = state.files.has(saved.activePath) ? saved.activePath : "";
       state.wrap = Boolean(saved.wrap);
@@ -337,7 +341,8 @@
       nativePath: file.nativePath || "",
       loaded: file.loaded !== false,
       tasks: file.tasks || [],
-      keywordMarks: file.keywordMarks || []
+      keywordMarks: file.keywordMarks || [],
+      order: file.order
     }));
     const payload = {
       app: "MyEditor",
@@ -357,7 +362,7 @@
 
   const persistSoon = debounce(persistWorkspace, 250);
 
-  function addFile({ path, content, savedContent, handle, nativePath, loaded, tasks, keywordMarks }) {
+  function addFile({ path, content, savedContent, handle, nativePath, loaded, tasks, keywordMarks, order }) {
     const cleanPath = normalizePath(path || "untitled.txt");
     const existing = state.files.get(cleanPath);
     const file = {
@@ -371,11 +376,37 @@
       nativePath: nativePath || (existing && existing.nativePath) || "",
       loaded: loaded !== false,
       tasks: Array.isArray(tasks) ? tasks : (existing && existing.tasks) || [],
-      keywordMarks: Array.isArray(keywordMarks) ? keywordMarks : (existing && existing.keywordMarks) || []
+      keywordMarks: Array.isArray(keywordMarks) ? keywordMarks : (existing && existing.keywordMarks) || [],
+      order: Number.isFinite(order) ? order : (existing && Number.isFinite(existing.order) ? existing.order : nextFileOrder())
     };
     file.dirty = file.content !== file.savedContent;
     state.files.set(cleanPath, file);
     return file;
+  }
+
+  function nextFileOrder() {
+    let max = -1;
+    state.files.forEach((file) => {
+      if (Number.isFinite(file.order)) max = Math.max(max, file.order);
+    });
+    return max + 1;
+  }
+
+  function compareFileOrder(a, b) {
+    const aOrder = Number.isFinite(a.order) ? a.order : Number.MAX_SAFE_INTEGER;
+    const bOrder = Number.isFinite(b.order) ? b.order : Number.MAX_SAFE_INTEGER;
+    if (aOrder !== bOrder) return aOrder - bOrder;
+    return a.path.localeCompare(b.path);
+  }
+
+  function getOrderedFiles() {
+    return Array.from(state.files.values()).sort(compareFileOrder);
+  }
+
+  function normalizeFileOrders() {
+    getOrderedFiles().forEach((file, index) => {
+      file.order = index;
+    });
   }
 
   function moveFilePath(file, nextPath) {
@@ -451,9 +482,8 @@
     const filter = els.fileFilter.value.trim().toLowerCase();
     const root = { folders: new Map(), files: [] };
 
-    Array.from(state.files.values())
+    getOrderedFiles()
       .filter((file) => !filter || file.path.toLowerCase().includes(filter))
-      .sort((a, b) => a.path.localeCompare(b.path))
       .forEach((file) => {
         const parts = file.path.split("/");
         let cursor = root;
@@ -824,6 +854,7 @@
       const file = addFile(entry);
       if (state.tabs.length < 6) state.tabs.push(file.path);
     });
+    normalizeFileOrders();
     state.activePath = state.tabs[0] || entries[0].path;
     renderTree();
     renderTabs();
@@ -836,6 +867,7 @@
     if (!ok) return;
     state.files.clear();
     samples.forEach((sample) => addFile(sample));
+    normalizeFileOrders();
     state.tabs = samples.slice(0, 3).map((sample) => sample.path);
     state.activePath = samples[0].path;
     renderAll();
@@ -848,6 +880,7 @@
       const file = addFile(entry);
       if (!state.tabs.includes(file.path)) state.tabs.push(file.path);
     });
+    normalizeFileOrders();
     state.activePath = entries[0] ? normalizePath(entries[0].path) : state.activePath;
     renderTree();
     renderTabs();
@@ -998,9 +1031,11 @@
       path,
       content: file.content,
       savedContent: file.content,
+      order: file.order + 0.5,
       tasks: file.tasks ? file.tasks.map((task) => ({ ...task, id: `${Date.now()}-${Math.random().toString(16).slice(2)}` })) : [],
       keywordMarks: file.keywordMarks ? file.keywordMarks.map((mark) => ({ ...mark })) : []
     });
+    normalizeFileOrders();
     activateFile(path);
   }
 
@@ -1018,8 +1053,36 @@
     state.files.delete(path);
     state.tabs = state.tabs.filter((item) => item !== path);
     state.activePath = state.tabs[0] || Array.from(state.files.keys())[0] || "";
+    normalizeFileOrders();
     renderAll();
     persistWorkspace();
+  }
+
+  function moveActiveFile(direction) {
+    const file = getActiveFile();
+    if (!file) return;
+    moveFileInProject(file.path, direction);
+  }
+
+  function moveFileInProject(path, direction) {
+    const ordered = getOrderedFiles();
+    const index = ordered.findIndex((file) => file.path === path);
+    const targetIndex = index + direction;
+    if (index < 0 || targetIndex < 0 || targetIndex >= ordered.length) {
+      showToast(direction < 0 ? "Already at the top" : "Already at the bottom");
+      return;
+    }
+
+    const current = ordered[index];
+    const target = ordered[targetIndex];
+    const currentOrder = current.order;
+    current.order = target.order;
+    target.order = currentOrder;
+    normalizeFileOrders();
+    renderTree();
+    renderTabs();
+    persistSoon();
+    showToast(direction < 0 ? "Moved file up" : "Moved file down");
   }
 
   function showFileMenu(path, x, y) {
@@ -1039,6 +1102,8 @@
     hideFileMenu();
     if (!path || !state.files.has(path)) return;
     await activateFile(path);
+    if (action === "move-up") moveFileInProject(path, -1);
+    if (action === "move-down") moveFileInProject(path, 1);
     if (action === "rename") renameActiveFile();
     if (action === "duplicate") duplicateActiveFile();
     if (action === "delete") deleteFilePath(path);

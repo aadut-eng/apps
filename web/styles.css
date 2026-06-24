@@ -964,6 +964,11 @@ button {
   outline: none;
 }
 
+.file-menu button:nth-child(3) {
+  border-top-color: var(--border);
+  margin-top: 4px;
+}
+
 .palette {
   width: min(680px, calc(100vw - 28px));
   max-height: min(640px, calc(100vh - 60px));

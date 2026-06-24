@@ -11,6 +11,7 @@ MyEditor is a lightweight macOS code editor inspired by Sublime Text. It uses a 
 - Page tasks saved inside the app workspace
 - Selected keyword coloring across the active page
 - Double-click file actions in the side panel
+- Move files up or down in the side panel with persistent ordering
 - Theme switching and word wrap
 - Native macOS file open/save dialogs
 - Standard macOS edit commands for copy, paste, cut, undo, redo, and select all
