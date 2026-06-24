@@ -343,6 +343,7 @@ button {
 }
 
 .tree-file {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 7px;
@@ -355,6 +356,23 @@ button {
   color: var(--muted);
   background: transparent;
   text-align: left;
+}
+
+.tree-file[draggable="true"] {
+  cursor: grab;
+}
+
+.tree-file.dragging {
+  cursor: grabbing;
+  opacity: 0.52;
+}
+
+.tree-file.drag-over-before {
+  box-shadow: inset 0 2px 0 var(--accent);
+}
+
+.tree-file.drag-over-after {
+  box-shadow: inset 0 -2px 0 var(--accent);
 }
 
 .tree-file:hover,

@@ -57,6 +57,8 @@
     tasksOpen: false,
     findMatches: [],
     findIndex: -1,
+    dragPath: "",
+    dragJustEnded: false,
     toastTimer: 0
   };
 
@@ -225,18 +227,21 @@
     els.themeSelect.addEventListener("change", () => setTheme(els.themeSelect.value));
 
     document.querySelectorAll("[data-find]").forEach((button) => {
+      button.addEventListener("mousedown", (event) => {
+        if (button.dataset.find !== "close") event.preventDefault();
+      });
       button.addEventListener("click", () => runFindAction(button.dataset.find));
     });
 
     els.findInput.addEventListener("input", () => {
       updateFindMatches();
-      selectFindMatch(0, { focusEditor: false });
+      selectFindMatch(0, { preserveFindFocus: true });
     });
 
     els.findInput.addEventListener("keydown", (event) => {
       if (event.key === "Enter") {
         event.preventDefault();
-        selectFindMatch(state.findIndex + (event.shiftKey ? -1 : 1));
+        selectFindMatch(state.findIndex + (event.shiftKey ? -1 : 1), { preserveFindFocus: true });
       }
       if (event.key === "Escape") closeFind();
     });
@@ -245,6 +250,7 @@
       if (event.key === "Enter") {
         event.preventDefault();
         replaceCurrentMatch();
+        restoreFindControlFocus(els.replaceInput);
       }
       if (event.key === "Escape") closeFind();
     });
@@ -514,12 +520,21 @@
       button.type = "button";
       button.className = `tree-file${file.path === state.activePath ? " active" : ""}`;
       button.style.paddingLeft = `${7 + depth * 4}px`;
-      button.addEventListener("click", () => activateFile(file.path));
+      button.draggable = true;
+      button.dataset.path = file.path;
+      button.addEventListener("click", () => {
+        if (!state.dragJustEnded) activateFile(file.path);
+      });
       button.addEventListener("dblclick", (event) => {
         event.preventDefault();
         event.stopPropagation();
         showFileMenu(file.path, event.clientX, event.clientY);
       });
+      button.addEventListener("dragstart", (event) => handleFileDragStart(event, file.path));
+      button.addEventListener("dragover", (event) => handleFileDragOver(event, file.path));
+      button.addEventListener("dragleave", handleFileDragLeave);
+      button.addEventListener("drop", (event) => handleFileDrop(event, file.path));
+      button.addEventListener("dragend", handleFileDragEnd);
 
       const dot = document.createElement("span");
       dot.className = `file-dot ${file.language}${file.loaded === false ? " unloaded" : ""}`;
@@ -1085,6 +1100,80 @@
     showToast(direction < 0 ? "Moved file up" : "Moved file down");
   }
 
+  function handleFileDragStart(event, path) {
+    state.dragPath = path;
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", path);
+    event.currentTarget.classList.add("dragging");
+  }
+
+  function handleFileDragOver(event, path) {
+    const sourcePath = state.dragPath || event.dataTransfer.getData("text/plain");
+    if (!sourcePath || sourcePath === path) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    const position = getFileDropPosition(event);
+    clearFileDragIndicators();
+    event.currentTarget.classList.add(position === "before" ? "drag-over-before" : "drag-over-after");
+    event.currentTarget.dataset.dropPosition = position;
+  }
+
+  function handleFileDragLeave(event) {
+    if (event.relatedTarget && event.currentTarget.contains(event.relatedTarget)) return;
+    event.currentTarget.classList.remove("drag-over-before", "drag-over-after");
+    delete event.currentTarget.dataset.dropPosition;
+  }
+
+  function handleFileDrop(event, path) {
+    const sourcePath = state.dragPath || event.dataTransfer.getData("text/plain");
+    if (!sourcePath || sourcePath === path) return;
+    event.preventDefault();
+    const position = event.currentTarget.dataset.dropPosition || getFileDropPosition(event);
+    clearFileDragIndicators();
+    reorderFileToPath(sourcePath, path, position);
+  }
+
+  function handleFileDragEnd(event) {
+    state.dragPath = "";
+    state.dragJustEnded = true;
+    event.currentTarget.classList.remove("dragging");
+    clearFileDragIndicators();
+    setTimeout(() => {
+      state.dragJustEnded = false;
+    }, 0);
+  }
+
+  function getFileDropPosition(event) {
+    const rect = event.currentTarget.getBoundingClientRect();
+    return event.clientY < rect.top + rect.height / 2 ? "before" : "after";
+  }
+
+  function clearFileDragIndicators() {
+    els.tree.querySelectorAll(".tree-file.drag-over-before, .tree-file.drag-over-after").forEach((button) => {
+      button.classList.remove("drag-over-before", "drag-over-after");
+      delete button.dataset.dropPosition;
+    });
+  }
+
+  function reorderFileToPath(sourcePath, targetPath, position) {
+    const source = state.files.get(sourcePath);
+    if (!source || !state.files.has(targetPath) || sourcePath === targetPath) return;
+
+    const ordered = getOrderedFiles().filter((file) => file.path !== sourcePath);
+    const targetIndex = ordered.findIndex((file) => file.path === targetPath);
+    if (targetIndex < 0) return;
+
+    const insertIndex = targetIndex + (position === "after" ? 1 : 0);
+    ordered.splice(insertIndex, 0, source);
+    ordered.forEach((file, index) => {
+      file.order = index;
+    });
+    renderTree();
+    renderTabs();
+    persistSoon();
+    showToast("Moved file");
+  }
+
   function showFileMenu(path, x, y) {
     state.contextPath = path;
     els.fileMenu.style.left = `${Math.min(x, window.innerWidth - 170)}px`;
@@ -1250,11 +1339,13 @@
   }
 
   function runFindAction(action) {
-    if (action === "next") selectFindMatch(state.findIndex + 1);
-    if (action === "prev") selectFindMatch(state.findIndex - 1);
+    const focusTarget = getFindControlFocus();
+    if (action === "next") selectFindMatch(state.findIndex + 1, { preserveFindFocus: true });
+    if (action === "prev") selectFindMatch(state.findIndex - 1, { preserveFindFocus: true });
     if (action === "replace") replaceCurrentMatch();
     if (action === "replace-all") replaceAllMatches();
     if (action === "close") closeFind();
+    else restoreFindControlFocus(focusTarget);
   }
 
   function updateFindMatches() {
@@ -1277,9 +1368,11 @@
   }
 
   function selectFindMatch(index, options = {}) {
-    const shouldFocusEditor = options.focusEditor !== false;
+    const shouldFocusEditor = options.focusEditor === true;
+    const focusTarget = options.preserveFindFocus ? getFindControlFocus() : null;
     if (!state.findMatches.length) {
       updateFindCount();
+      restoreFindControlFocus(focusTarget);
       return;
     }
     const length = state.findMatches.length;
@@ -1290,6 +1383,25 @@
     els.editor.scrollTop = estimateScrollForOffset(match.start);
     syncScroll();
     updateFindCount();
+    restoreFindControlFocus(focusTarget);
+  }
+
+  function getFindControlFocus() {
+    if (document.activeElement === els.findInput) return els.findInput;
+    if (document.activeElement === els.replaceInput) return els.replaceInput;
+    return null;
+  }
+
+  function restoreFindControlFocus(target) {
+    if (!target || els.findBar.hidden) return;
+    window.requestAnimationFrame(() => {
+      if (els.findBar.hidden) return;
+      try {
+        target.focus({ preventScroll: true });
+      } catch (error) {
+        target.focus();
+      }
+    });
   }
 
   function estimateScrollForOffset(offset) {
@@ -1314,13 +1426,13 @@
   function replaceCurrentMatch() {
     const query = els.findInput.value;
     if (!query || !state.findMatches.length) return;
-    if (state.findIndex < 0) selectFindMatch(0);
+    if (state.findIndex < 0) selectFindMatch(0, { preserveFindFocus: true });
     const match = state.findMatches[state.findIndex];
     const replacement = els.replaceInput.value;
     const value = els.editor.value.slice(0, match.start) + replacement + els.editor.value.slice(match.end);
     applyEditorValue(value, match.start + replacement.length);
     updateFindMatches();
-    selectFindMatch(state.findIndex);
+    selectFindMatch(state.findIndex, { preserveFindFocus: true });
   }
 
   function replaceAllMatches() {
