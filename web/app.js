@@ -19,6 +19,7 @@
     fileInput: document.getElementById("fileInput"),
     importInput: document.getElementById("importInput"),
     themeSelect: document.getElementById("themeSelect"),
+    markButton: document.getElementById("markButton"),
     boldButton: document.getElementById("boldButton"),
     italicButton: document.getElementById("italicButton"),
     findBar: document.getElementById("findBar"),
@@ -39,6 +40,7 @@
     taskInput: document.getElementById("taskInput"),
     taskList: document.getElementById("taskList"),
     fileMenu: document.getElementById("fileMenu"),
+    markMenu: document.getElementById("markMenu"),
     toast: document.getElementById("toast"),
     statusPath: document.getElementById("statusPath"),
     statusDirty: document.getElementById("statusDirty"),
@@ -71,6 +73,13 @@
   };
 
   const markClasses = ["mark-yellow", "mark-green", "mark-blue", "mark-rose", "mark-violet"];
+  const markLabels = {
+    "mark-yellow": "Yellow",
+    "mark-green": "Green",
+    "mark-blue": "Blue",
+    "mark-rose": "Rose",
+    "mark-violet": "Violet"
+  };
 
   window.MyEditorNative = window.MyEditorNative || {
     pending: new Map(),
@@ -173,7 +182,9 @@
     { id: "move-file-down", title: "Move File Down", meta: "Project", run: () => moveActiveFile(1) },
     { id: "find", title: "Find and Replace", meta: "Edit", run: openFind },
     { id: "toggle-tasks", title: "Toggle Page Tasks", meta: "Page", run: toggleTasks },
+    { id: "open-mark-menu", title: "Mark Menu", meta: "Page", run: openMarkMenu },
     { id: "mark-keyword", title: "Color Selected Keyword", meta: "Page", run: markSelectedKeyword },
+    { id: "remove-keyword-mark", title: "Remove Mark from Selection", meta: "Page", run: removeSelectedKeywordMark },
     { id: "clear-keyword-marks", title: "Clear Keyword Colors", meta: "Page", run: clearKeywordMarks },
     { id: "quick-open", title: "Quick Open", meta: "Navigate", run: () => openPalette("files") },
     { id: "command-palette", title: "Command Palette", meta: "Navigate", run: () => openPalette("commands") },
@@ -316,8 +327,14 @@
       button.addEventListener("click", () => runFileAction(button.dataset.fileAction));
     });
 
+    els.markMenu.querySelectorAll("button").forEach((button) => {
+      button.addEventListener("mousedown", (event) => event.preventDefault());
+      button.addEventListener("click", () => runMarkMenuAction(button));
+    });
+
     document.addEventListener("click", (event) => {
       if (!els.fileMenu.hidden && !els.fileMenu.contains(event.target)) hideFileMenu();
+      if (!els.markMenu.hidden && !els.markMenu.contains(event.target) && event.target !== els.markButton) hideMarkMenu();
     });
 
     document.addEventListener("keydown", handleGlobalKeydown);
@@ -1323,6 +1340,29 @@
     if (action === "delete") deleteFilePath(path);
   }
 
+  function openMarkMenu() {
+    if (!els.markMenu.hidden) {
+      hideMarkMenu();
+      return;
+    }
+    const rect = els.markButton.getBoundingClientRect();
+    els.markMenu.style.left = `${Math.min(rect.left, window.innerWidth - 180)}px`;
+    els.markMenu.style.top = `${Math.min(rect.bottom + 6, window.innerHeight - 230)}px`;
+    els.markMenu.hidden = false;
+  }
+
+  function hideMarkMenu() {
+    els.markMenu.hidden = true;
+  }
+
+  function runMarkMenuAction(button) {
+    const color = button.dataset.markColor;
+    const action = button.dataset.markAction;
+    hideMarkMenu();
+    if (color) applyKeywordMark(color);
+    if (action === "remove") removeSelectedKeywordMark();
+  }
+
   function toggleTasks(force) {
     state.tasksOpen = typeof force === "boolean" ? force : !state.tasksOpen;
     els.taskPanel.hidden = !state.tasksOpen;
@@ -1395,27 +1435,79 @@
   function markSelectedKeyword() {
     const file = getActiveFile();
     if (!file || file.loaded === false) return;
-    const selected = els.editor.value.slice(els.editor.selectionStart, els.editor.selectionEnd).trim();
-    if (!selected) {
-      showToast("Select a keyword first");
-      return;
-    }
-    if (selected.length > 80 || /\n/.test(selected)) {
-      showToast("Select one short keyword");
-      return;
-    }
+    const selected = getSelectedMarkText();
+    if (!selected) return;
 
-    file.keywordMarks = file.keywordMarks || [];
-    const existingIndex = file.keywordMarks.findIndex((mark) => mark.text === selected);
+    const existingIndex = getKeywordMarkIndex(file, selected);
     if (existingIndex >= 0) {
       file.keywordMarks.splice(existingIndex, 1);
-      showToast(`Removed color from ${selected}`);
+      showToast(`Removed mark from ${selected}`);
     } else {
       const className = markClasses[file.keywordMarks.length % markClasses.length];
-      file.keywordMarks.push({ text: selected, className });
-      showToast(`Colored ${selected}`);
+      setKeywordMark(file, selected, className);
+      showToast(`Marked ${selected} ${markLabels[className]}`);
     }
 
+    finishKeywordMarkChange();
+  }
+
+  function applyKeywordMark(className) {
+    const file = getActiveFile();
+    if (!file || file.loaded === false) return;
+    if (!markClasses.includes(className)) return;
+    const selected = getSelectedMarkText();
+    if (!selected) return;
+
+    setKeywordMark(file, selected, className);
+    finishKeywordMarkChange();
+    showToast(`Marked ${selected} ${markLabels[className]}`);
+  }
+
+  function removeSelectedKeywordMark() {
+    const file = getActiveFile();
+    if (!file || file.loaded === false) return;
+    const selected = getSelectedMarkText();
+    if (!selected) return;
+
+    const existingIndex = getKeywordMarkIndex(file, selected);
+    if (existingIndex < 0) {
+      showToast("No mark on selected text");
+      return;
+    }
+    file.keywordMarks.splice(existingIndex, 1);
+    finishKeywordMarkChange();
+    showToast(`Removed mark from ${selected}`);
+  }
+
+  function setKeywordMark(file, selected, className) {
+    file.keywordMarks = file.keywordMarks || [];
+    const existingIndex = getKeywordMarkIndex(file, selected);
+    const nextMark = { text: selected, className };
+    if (existingIndex >= 0) file.keywordMarks.splice(existingIndex, 1, nextMark);
+    else file.keywordMarks.push(nextMark);
+  }
+
+  function getKeywordMarkIndex(file, selected) {
+    file.keywordMarks = file.keywordMarks || [];
+    return file.keywordMarks.findIndex((mark) => mark.text === selected);
+  }
+
+  function getSelectedMarkText() {
+    const selected = els.editor.value.slice(els.editor.selectionStart, els.editor.selectionEnd).trim();
+    if (!selected) {
+      showToast("Select text first");
+      return "";
+    }
+    if (selected.length > 80 || /\n/.test(selected)) {
+      showToast("Select one short word or phrase");
+      return "";
+    }
+    return selected;
+  }
+
+  function finishKeywordMarkChange() {
+    const file = getActiveFile();
+    if (!file) return;
     file.decorationCache = null;
     updateEditorDecorations();
     persistSoon();
@@ -2277,13 +2369,14 @@
   function decorateKeywordMarks(value) {
     const marks = getKeywordMarks();
     if (!marks.length || !value) return escapeHtml(value);
-    const pattern = marks.map((mark) => escapeRegExp(mark.text)).join("|");
+    const orderedMarks = marks.slice().sort((a, b) => b.text.length - a.text.length);
+    const pattern = orderedMarks.map((mark) => escapeRegExp(mark.text)).join("|");
     const expression = new RegExp(pattern, "g");
     let output = "";
     let lastIndex = 0;
     value.replace(expression, (match, offset) => {
       output += escapeHtml(value.slice(lastIndex, offset));
-      const mark = marks.find((item) => item.text === match) || marks[0];
+      const mark = orderedMarks.find((item) => item.text === match) || orderedMarks[0];
       output += `<span class="keyword-mark ${mark.className}">${escapeHtml(match)}</span>`;
       lastIndex = offset + match.length;
       return match;

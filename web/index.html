@@ -20,7 +20,7 @@
           <button type="button" class="action-button" data-command="save-file">Save</button>
           <button type="button" class="action-button" data-command="find">Find</button>
           <button type="button" class="action-button" data-command="toggle-tasks">Tasks</button>
-          <button type="button" class="action-button" data-command="mark-keyword">Mark</button>
+          <button type="button" class="action-button" id="markButton" data-command="open-mark-menu">Mark</button>
           <button type="button" class="action-button" data-command="command-palette">Palette</button>
         </nav>
 
@@ -128,6 +128,15 @@
         <button type="button" data-file-action="rename">Rename</button>
         <button type="button" data-file-action="duplicate">Duplicate</button>
         <button type="button" data-file-action="delete">Delete</button>
+      </div>
+
+      <div id="markMenu" class="mark-menu" hidden>
+        <button type="button" data-mark-color="mark-yellow"><span class="mark-swatch mark-yellow"></span>Yellow</button>
+        <button type="button" data-mark-color="mark-green"><span class="mark-swatch mark-green"></span>Green</button>
+        <button type="button" data-mark-color="mark-blue"><span class="mark-swatch mark-blue"></span>Blue</button>
+        <button type="button" data-mark-color="mark-rose"><span class="mark-swatch mark-rose"></span>Rose</button>
+        <button type="button" data-mark-color="mark-violet"><span class="mark-swatch mark-violet"></span>Violet</button>
+        <button type="button" data-mark-action="remove">Remove Mark</button>
       </div>
 
       <input id="fileInput" type="file" multiple webkitdirectory hidden>
