@@ -317,18 +317,21 @@ button {
 
 .sidebar-handle {
   position: absolute;
-  left: 8px;
-  top: 6px;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
   z-index: 18;
   display: grid;
   place-items: center;
   width: 26px;
-  height: 26px;
+  height: 52px;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-left: 0;
+  border-radius: 0 8px 8px 0;
   color: var(--muted);
   background: color-mix(in srgb, var(--panel) 88%, var(--editor-bg));
   box-shadow: 0 8px 18px color-mix(in srgb, var(--shadow) 56%, transparent);
+  cursor: pointer;
 }
 
 .sidebar-handle:hover,
@@ -356,12 +359,16 @@ button {
   min-width: 0;
 }
 
+.sidebar[hidden] {
+  display: none !important;
+}
+
 .sidebar-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 0 10px 0 44px;
+  padding: 0 10px 0 14px;
   border-bottom: 1px solid var(--border);
   color: var(--muted);
   font-size: 0.78rem;
@@ -537,10 +544,6 @@ button {
   background: var(--panel);
   border-bottom: 1px solid var(--border);
   scrollbar-width: thin;
-}
-
-.app-shell.sidebar-hidden .tabs {
-  padding-left: 44px;
 }
 
 .tab-button {

@@ -1562,6 +1562,7 @@
     els.sidebarToggle.querySelector("span").textContent = state.sidebarHidden ? ">" : "<";
     els.sidebarToggle.setAttribute("aria-label", state.sidebarHidden ? "Show side panel" : "Hide side panel");
     els.sidebarToggle.setAttribute("aria-pressed", state.sidebarHidden ? "false" : "true");
+    els.sidebarToggle.setAttribute("aria-expanded", state.sidebarHidden ? "false" : "true");
     if (shouldPersist) persistWorkspace();
   }
 
