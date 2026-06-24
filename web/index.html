@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>MyEditor</title>
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body>
+    <div class="app-shell" data-theme="monokai">
+      <header class="topbar">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true">P</span>
+          <span class="brand-name">MyEditor</span>
+        </div>
+
+        <nav class="top-actions" aria-label="Editor actions">
+          <button type="button" class="action-button" data-command="new-file">New</button>
+          <button type="button" class="action-button" data-command="open-folder">Open</button>
+          <button type="button" class="action-button" data-command="save-file">Save</button>
+          <button type="button" class="action-button" data-command="find">Find</button>
+          <button type="button" class="action-button" data-command="command-palette">Palette</button>
+        </nav>
+
+        <div class="top-right">
+          <label class="theme-select">
+            <span>Theme</span>
+            <select id="themeSelect" aria-label="Theme">
+              <option value="monokai">Monokai</option>
+              <option value="paper">Paper</option>
+              <option value="contrast">Contrast</option>
+            </select>
+          </label>
+          <button type="button" class="icon-button" data-command="toggle-wrap" aria-label="Toggle word wrap">
+            <span class="icon-wrap" aria-hidden="true"></span>
+          </button>
+        </div>
+      </header>
+
+      <main class="workspace">
+        <aside class="sidebar">
+          <div class="sidebar-header">
+            <span>Project</span>
+            <button type="button" class="tiny-button" data-command="new-file" aria-label="Add file">+</button>
+          </div>
+          <input id="fileFilter" class="file-filter" type="search" autocomplete="off" placeholder="Filter files" aria-label="Filter files">
+          <div id="tree" class="tree" role="tree"></div>
+        </aside>
+
+        <section class="editor-pane" aria-label="Code editor">
+          <div id="tabs" class="tabs" role="tablist" aria-label="Open files"></div>
+
+          <div id="findBar" class="find-bar" hidden>
+            <input id="findInput" type="search" autocomplete="off" placeholder="Find" aria-label="Find">
+            <input id="replaceInput" type="text" autocomplete="off" placeholder="Replace" aria-label="Replace">
+            <button type="button" class="mini-button" data-find="prev" aria-label="Previous match">Prev</button>
+            <button type="button" class="mini-button" data-find="next" aria-label="Next match">Next</button>
+            <button type="button" class="mini-button" data-find="replace">Replace</button>
+            <button type="button" class="mini-button" data-find="replace-all">All</button>
+            <output id="findCount" class="find-count" aria-live="polite"></output>
+            <button type="button" class="icon-button small" data-find="close" aria-label="Close find">x</button>
+          </div>
+
+          <div class="editor-frame">
+            <pre id="lineNumbers" class="line-numbers" aria-hidden="true"></pre>
+            <div class="code-wrap">
+              <pre id="highlightLayer" class="highlight-layer" aria-hidden="true"></pre>
+              <textarea id="editor" spellcheck="false" autocapitalize="off" autocomplete="off" aria-label="Editor"></textarea>
+            </div>
+          </div>
+        </section>
+
+        <aside class="minimap-pane" aria-label="Minimap">
+          <pre id="minimap" class="minimap" aria-hidden="true"></pre>
+        </aside>
+      </main>
+
+      <footer class="statusbar">
+        <span id="statusPath" class="status-path"></span>
+        <span id="statusDirty"></span>
+        <span id="statusCursor"></span>
+        <span id="statusLanguage"></span>
+        <span id="statusSize"></span>
+      </footer>
+
+      <div id="paletteOverlay" class="palette-overlay" hidden>
+        <section class="palette" role="dialog" aria-modal="true" aria-label="Command palette">
+          <input id="paletteInput" class="palette-input" type="search" autocomplete="off" aria-label="Command palette">
+          <div id="paletteList" class="palette-list" role="listbox"></div>
+        </section>
+      </div>
+
+      <div id="dialogOverlay" class="dialog-overlay" hidden>
+        <section class="dialog-box" role="dialog" aria-modal="true" aria-labelledby="dialogTitle">
+          <h2 id="dialogTitle"></h2>
+          <p id="dialogMessage"></p>
+          <input id="dialogInput" type="text" autocomplete="off" aria-label="Value">
+          <div class="dialog-actions">
+            <button type="button" class="mini-button" id="dialogCancel">Cancel</button>
+            <button type="button" class="mini-button primary" id="dialogConfirm">OK</button>
+          </div>
+        </section>
+      </div>
+
+      <input id="fileInput" type="file" multiple webkitdirectory hidden>
+      <input id="importInput" type="file" accept="application/json,.json" hidden>
+      <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+    </div>
+
+    <script src="./app.js"></script>
+  </body>
+</html>
