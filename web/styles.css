@@ -1066,7 +1066,7 @@ button {
   margin-top: 4px;
 }
 
-.mark-menu button:last-child {
+.mark-menu button[data-mark-action="remove"] {
   border-top-color: var(--border);
   margin-top: 4px;
 }

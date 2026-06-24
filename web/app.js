@@ -238,6 +238,7 @@
     els.editor.addEventListener("keydown", handleEditorKeydown);
     els.editor.addEventListener("keyup", updateStatus);
     els.editor.addEventListener("click", updateStatus);
+    els.editor.addEventListener("dblclick", handleEditorDoubleClick);
     els.editor.addEventListener("select", updateStatus);
 
     els.editor.addEventListener("scroll", syncScroll);
@@ -1361,6 +1362,7 @@
     hideMarkMenu();
     if (color) applyKeywordMark(color);
     if (action === "remove") removeSelectedKeywordMark();
+    if (action === "clear") clearKeywordMarks();
   }
 
   function toggleTasks(force) {
@@ -1516,11 +1518,15 @@
   function clearKeywordMarks() {
     const file = getActiveFile();
     if (!file) return;
+    if (!file.keywordMarks || !file.keywordMarks.length) {
+      showToast("No marks on this page");
+      return;
+    }
     file.keywordMarks = [];
     file.decorationCache = null;
     updateEditorDecorations();
     persistSoon();
-    showToast("Keyword colors cleared");
+    showToast("All page marks removed");
   }
 
   function toggleWrap() {
@@ -1692,6 +1698,49 @@
       if (Object.prototype.hasOwnProperty.call(entry, "italic")) style.italic = Boolean(entry.italic);
     });
     return style;
+  }
+
+  function handleEditorDoubleClick() {
+    window.setTimeout(selectExactWordFromCurrentSelection, 0);
+  }
+
+  function selectExactWordFromCurrentSelection() {
+    const value = els.editor.value;
+    if (!value) return;
+
+    const originalStart = Math.min(els.editor.selectionStart, els.editor.selectionEnd);
+    const originalEnd = Math.max(els.editor.selectionStart, els.editor.selectionEnd);
+    let start = originalStart;
+    let end = originalEnd;
+
+    while (start < end && !isExactWordCharacter(value[start])) start += 1;
+    while (end > start && !isExactWordCharacter(value[end - 1])) end -= 1;
+
+    if (start === end) {
+      const candidate = Math.min(start, value.length - 1);
+      if (isExactWordCharacter(value[candidate])) {
+        start = candidate;
+        end = candidate + 1;
+      } else if (candidate > 0 && isExactWordCharacter(value[candidate - 1])) {
+        start = candidate - 1;
+        end = candidate;
+      } else {
+        updateStatus();
+        return;
+      }
+    }
+
+    while (start > 0 && isExactWordCharacter(value[start - 1])) start -= 1;
+    while (end < value.length && isExactWordCharacter(value[end])) end += 1;
+
+    if (end > start) {
+      els.editor.setSelectionRange(start, end);
+      updateStatus();
+    }
+  }
+
+  function isExactWordCharacter(character) {
+    return /[\p{L}\p{N}_$]/u.test(character || "");
   }
 
   function setTheme(theme, shouldPersist = true) {
