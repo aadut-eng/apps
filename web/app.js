@@ -230,7 +230,7 @@
 
     els.findInput.addEventListener("input", () => {
       updateFindMatches();
-      selectFindMatch(0);
+      selectFindMatch(0, { focusEditor: false });
     });
 
     els.findInput.addEventListener("keydown", (event) => {
@@ -1276,7 +1276,8 @@
     updateFindCount();
   }
 
-  function selectFindMatch(index) {
+  function selectFindMatch(index, options = {}) {
+    const shouldFocusEditor = options.focusEditor !== false;
     if (!state.findMatches.length) {
       updateFindCount();
       return;
@@ -1284,7 +1285,7 @@
     const length = state.findMatches.length;
     state.findIndex = ((index % length) + length) % length;
     const match = state.findMatches[state.findIndex];
-    els.editor.focus();
+    if (shouldFocusEditor) els.editor.focus();
     els.editor.setSelectionRange(match.start, match.end);
     els.editor.scrollTop = estimateScrollForOffset(match.start);
     syncScroll();
