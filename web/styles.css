@@ -403,6 +403,10 @@ button {
   background: #5cc8a7;
 }
 
+.file-dot.unloaded {
+  opacity: 0.45;
+}
+
 .file-name {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -422,7 +426,7 @@ button {
   min-width: 0;
   min-height: 0;
   display: grid;
-  grid-template-rows: 36px auto minmax(0, 1fr);
+  grid-template-rows: 36px auto auto minmax(0, 1fr);
   background: var(--editor-bg);
 }
 
@@ -539,6 +543,104 @@ button {
   font-size: 0.84rem;
 }
 
+.task-panel {
+  display: grid;
+  grid-template-rows: 34px 36px minmax(0, auto);
+  gap: 6px;
+  padding: 7px 8px 9px;
+  background: color-mix(in srgb, var(--panel-soft) 86%, var(--editor-bg));
+  border-bottom: 1px solid var(--border);
+}
+
+.task-panel[hidden] {
+  display: none;
+}
+
+.task-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 760;
+  text-transform: uppercase;
+}
+
+.task-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px;
+}
+
+.task-form input {
+  min-width: 0;
+  height: 28px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--editor-bg);
+  color: var(--text);
+  padding: 0 9px;
+  outline: none;
+}
+
+.task-form input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.task-list {
+  display: grid;
+  gap: 4px;
+  max-height: 132px;
+  overflow: auto;
+}
+
+.task-row {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) 24px;
+  align-items: center;
+  gap: 7px;
+  min-height: 28px;
+  padding: 3px 6px;
+  border-radius: 6px;
+  color: var(--text);
+  background: color-mix(in srgb, var(--panel) 70%, transparent);
+}
+
+.task-row span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-row.done span {
+  color: var(--subtle);
+  text-decoration: line-through;
+}
+
+.task-remove {
+  width: 22px;
+  height: 22px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--subtle);
+}
+
+.task-remove:hover,
+.task-remove:focus-visible {
+  background: var(--panel-strong);
+  color: var(--text);
+  outline: none;
+}
+
+.task-empty {
+  color: var(--subtle);
+  font-size: 0.86rem;
+  padding: 5px 2px;
+}
+
 .editor-frame {
   min-width: 0;
   min-height: 0;
@@ -602,6 +704,10 @@ button {
   -webkit-text-fill-color: transparent;
 }
 
+#editor:disabled {
+  opacity: 1;
+}
+
 #editor::selection {
   background: var(--selection);
 }
@@ -652,6 +758,32 @@ button {
 
 .token-emphasis {
   color: var(--accent-2);
+}
+
+.keyword-mark {
+  border-radius: 3px;
+  padding: 0 1px;
+  color: inherit;
+}
+
+.mark-yellow {
+  background: rgba(248, 197, 85, 0.36);
+}
+
+.mark-green {
+  background: rgba(6, 214, 160, 0.28);
+}
+
+.mark-blue {
+  background: rgba(76, 201, 240, 0.28);
+}
+
+.mark-rose {
+  background: rgba(239, 71, 111, 0.3);
+}
+
+.mark-violet {
+  background: rgba(199, 146, 234, 0.32);
 }
 
 .app-shell[data-theme="paper"] .token-keyword {
@@ -798,6 +930,38 @@ button {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+}
+
+.file-menu {
+  position: fixed;
+  z-index: 35;
+  width: 150px;
+  padding: 5px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: 0 14px 34px var(--shadow);
+}
+
+.file-menu[hidden] {
+  display: none;
+}
+
+.file-menu button {
+  width: 100%;
+  height: 30px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--text);
+  background: transparent;
+  text-align: left;
+  padding: 0 8px;
+}
+
+.file-menu button:hover,
+.file-menu button:focus-visible {
+  background: var(--panel-strong);
+  outline: none;
 }
 
 .palette {

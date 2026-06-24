@@ -19,6 +19,8 @@
           <button type="button" class="action-button" data-command="open-folder">Open</button>
           <button type="button" class="action-button" data-command="save-file">Save</button>
           <button type="button" class="action-button" data-command="find">Find</button>
+          <button type="button" class="action-button" data-command="toggle-tasks">Tasks</button>
+          <button type="button" class="action-button" data-command="mark-keyword">Mark</button>
           <button type="button" class="action-button" data-command="command-palette">Palette</button>
         </nav>
 
@@ -61,6 +63,18 @@
             <button type="button" class="icon-button small" data-find="close" aria-label="Close find">x</button>
           </div>
 
+          <div id="taskPanel" class="task-panel" hidden>
+            <div class="task-panel-header">
+              <span>Page Tasks</span>
+              <button type="button" class="icon-button small" data-task="close" aria-label="Close tasks">x</button>
+            </div>
+            <form id="taskForm" class="task-form">
+              <input id="taskInput" type="text" autocomplete="off" placeholder="Add a task for this page" aria-label="Task">
+              <button type="submit" class="mini-button primary">Add</button>
+            </form>
+            <div id="taskList" class="task-list" aria-live="polite"></div>
+          </div>
+
           <div class="editor-frame">
             <pre id="lineNumbers" class="line-numbers" aria-hidden="true"></pre>
             <div class="code-wrap">
@@ -100,6 +114,12 @@
             <button type="button" class="mini-button primary" id="dialogConfirm">OK</button>
           </div>
         </section>
+      </div>
+
+      <div id="fileMenu" class="file-menu" hidden>
+        <button type="button" data-file-action="rename">Rename</button>
+        <button type="button" data-file-action="duplicate">Duplicate</button>
+        <button type="button" data-file-action="delete">Delete</button>
       </div>
 
       <input id="fileInput" type="file" multiple webkitdirectory hidden>

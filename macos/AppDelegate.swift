@@ -82,6 +82,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
             case "saveRaw":
                 let result = try saveRaw(payload: payload)
                 complete(id: id, result: result)
+            case "readFile":
+                let result = try readFile(payload: payload)
+                complete(id: id, result: result)
             default:
                 fail(id: id, error: "Unknown native action")
             }
@@ -102,11 +105,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
 
     private func buildMenu() {
         let mainMenu = NSMenu()
+
         let appMenuItem = NSMenuItem()
         let appMenu = NSMenu()
+        appMenu.addItem(withTitle: "About MyEditor", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
+        appMenu.addItem(NSMenuItem.separator())
         appMenu.addItem(withTitle: "Quit MyEditor", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         appMenuItem.submenu = appMenu
         mainMenu.addItem(appMenuItem)
+
+        let editMenuItem = NSMenuItem()
+        let editMenu = NSMenu(title: "Edit")
+        editMenu.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
+        editMenu.addItem(withTitle: "Redo", action: Selector(("redo:")), keyEquivalent: "Z")
+        editMenu.addItem(NSMenuItem.separator())
+        editMenu.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        editMenu.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        editMenu.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        editMenu.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        editMenuItem.submenu = editMenu
+        mainMenu.addItem(editMenuItem)
+
         NSApp.mainMenu = mainMenu
     }
 
@@ -189,6 +208,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         ]
     }
 
+    private func readFile(payload: [String: Any]) throws -> [String: Any] {
+        guard let nativePath = payload["nativePath"] as? String, !nativePath.isEmpty else {
+            throw NativeError.cancelled
+        }
+
+        let url = URL(fileURLWithPath: nativePath)
+        guard let content = readTextFile(url) else {
+            throw NativeError.cancelled
+        }
+
+        return [
+            "content": content,
+            "savedContent": content
+        ]
+    }
+
     private func chooseSaveURL(suggestedName: String) -> URL? {
         let panel = NSSavePanel()
         panel.nameFieldStringValue = suggestedName
@@ -216,13 +251,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
                 continue
             }
 
-            guard let content = readTextFile(url) else { continue }
+            guard isLikelyTextFile(url) else { continue }
             let relativePath = relativePath(from: root, to: url)
             result.append([
                 "path": relativePath,
-                "content": content,
-                "savedContent": content,
-                "nativePath": url.path
+                "content": "",
+                "savedContent": "",
+                "nativePath": url.path,
+                "loaded": false
             ])
         }
 

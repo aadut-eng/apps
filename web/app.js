@@ -29,6 +29,11 @@
     dialogInput: document.getElementById("dialogInput"),
     dialogCancel: document.getElementById("dialogCancel"),
     dialogConfirm: document.getElementById("dialogConfirm"),
+    taskPanel: document.getElementById("taskPanel"),
+    taskForm: document.getElementById("taskForm"),
+    taskInput: document.getElementById("taskInput"),
+    taskList: document.getElementById("taskList"),
+    fileMenu: document.getElementById("fileMenu"),
     toast: document.getElementById("toast"),
     statusPath: document.getElementById("statusPath"),
     statusDirty: document.getElementById("statusDirty"),
@@ -46,10 +51,16 @@
     paletteItems: [],
     paletteIndex: 0,
     dialogResolve: null,
+    contextPath: "",
+    decorationTimer: 0,
+    decorationFrame: 0,
+    tasksOpen: false,
     findMatches: [],
     findIndex: -1,
     toastTimer: 0
   };
+
+  const markClasses = ["mark-yellow", "mark-green", "mark-blue", "mark-rose", "mark-violet"];
 
   window.MyEditorNative = window.MyEditorNative || {
     pending: new Map(),
@@ -149,6 +160,9 @@
     { id: "duplicate-file", title: "Duplicate File", meta: "File", run: duplicateActiveFile },
     { id: "delete-file", title: "Delete File", meta: "File", run: deleteActiveFile },
     { id: "find", title: "Find and Replace", meta: "Edit", run: openFind },
+    { id: "toggle-tasks", title: "Toggle Page Tasks", meta: "Page", run: toggleTasks },
+    { id: "mark-keyword", title: "Color Selected Keyword", meta: "Page", run: markSelectedKeyword },
+    { id: "clear-keyword-marks", title: "Clear Keyword Colors", meta: "Page", run: clearKeywordMarks },
     { id: "quick-open", title: "Quick Open", meta: "Navigate", run: () => openPalette("files") },
     { id: "command-palette", title: "Command Palette", meta: "Navigate", run: () => openPalette("commands") },
     { id: "toggle-wrap", title: "Toggle Word Wrap", meta: "View", run: toggleWrap },
@@ -178,7 +192,9 @@
       if (!file) return;
       file.content = els.editor.value;
       file.dirty = file.content !== file.savedContent;
-      updateEditorDecorations();
+      file.decorationCache = null;
+      updateLineNumbers(file.content);
+      requestEditorDecorations();
       renderTabs();
       renderTree();
       updateFindMatches();
@@ -259,6 +275,25 @@
       if (event.key === "Escape") closeDialog(null);
     });
 
+    els.taskForm.addEventListener("submit", (event) => {
+      event.preventDefault();
+      addTask();
+    });
+
+    document.querySelectorAll("[data-task]").forEach((button) => {
+      button.addEventListener("click", () => {
+        if (button.dataset.task === "close") toggleTasks(false);
+      });
+    });
+
+    document.querySelectorAll("[data-file-action]").forEach((button) => {
+      button.addEventListener("click", () => runFileAction(button.dataset.fileAction));
+    });
+
+    document.addEventListener("click", (event) => {
+      if (!els.fileMenu.hidden && !els.fileMenu.contains(event.target)) hideFileMenu();
+    });
+
     document.addEventListener("keydown", handleGlobalKeydown);
   }
 
@@ -269,7 +304,10 @@
         path: entry.path,
         content: entry.content || "",
         savedContent: typeof entry.savedContent === "string" ? entry.savedContent : entry.content || "",
-        nativePath: entry.nativePath || ""
+        nativePath: entry.nativePath || "",
+        loaded: entry.loaded !== false,
+        tasks: Array.isArray(entry.tasks) ? entry.tasks : [],
+        keywordMarks: Array.isArray(entry.keywordMarks) ? entry.keywordMarks : []
       }));
       state.tabs = saved.tabs && saved.tabs.length ? saved.tabs.filter((path) => state.files.has(path)) : [];
       state.activePath = state.files.has(saved.activePath) ? saved.activePath : "";
@@ -296,7 +334,10 @@
       path: file.path,
       content: file.content,
       savedContent: file.savedContent,
-      nativePath: file.nativePath || ""
+      nativePath: file.nativePath || "",
+      loaded: file.loaded !== false,
+      tasks: file.tasks || [],
+      keywordMarks: file.keywordMarks || []
     }));
     const payload = {
       app: "MyEditor",
@@ -316,7 +357,7 @@
 
   const persistSoon = debounce(persistWorkspace, 250);
 
-  function addFile({ path, content, savedContent, handle, nativePath }) {
+  function addFile({ path, content, savedContent, handle, nativePath, loaded, tasks, keywordMarks }) {
     const cleanPath = normalizePath(path || "untitled.txt");
     const existing = state.files.get(cleanPath);
     const file = {
@@ -327,7 +368,10 @@
       savedContent: typeof savedContent === "string" ? savedContent : content || "",
       dirty: false,
       handle: handle || (existing && existing.handle) || null,
-      nativePath: nativePath || (existing && existing.nativePath) || ""
+      nativePath: nativePath || (existing && existing.nativePath) || "",
+      loaded: loaded !== false,
+      tasks: Array.isArray(tasks) ? tasks : (existing && existing.tasks) || [],
+      keywordMarks: Array.isArray(keywordMarks) ? keywordMarks : (existing && existing.keywordMarks) || []
     };
     file.dirty = file.content !== file.savedContent;
     state.files.set(cleanPath, file);
@@ -441,9 +485,14 @@
       button.className = `tree-file${file.path === state.activePath ? " active" : ""}`;
       button.style.paddingLeft = `${7 + depth * 4}px`;
       button.addEventListener("click", () => activateFile(file.path));
+      button.addEventListener("dblclick", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        showFileMenu(file.path, event.clientX, event.clientY);
+      });
 
       const dot = document.createElement("span");
-      dot.className = `file-dot ${file.language}`;
+      dot.className = `file-dot ${file.language}${file.loaded === false ? " unloaded" : ""}`;
 
       const name = document.createElement("span");
       name.className = "file-name";
@@ -495,13 +544,21 @@
     });
   }
 
-  function activateFile(path) {
+  async function activateFile(path) {
     if (!path || !state.files.has(path)) return;
     state.activePath = path;
     if (!state.tabs.includes(path)) state.tabs.push(path);
+    const file = state.files.get(path);
+    if (file && file.loaded === false) {
+      showLoadingFile(file);
+      renderTree();
+      renderTabs();
+      await ensureFileLoaded(file);
+    }
     updateEditorFromState();
     renderTree();
     renderTabs();
+    renderTasks();
     persistSoon();
   }
 
@@ -513,24 +570,77 @@
       updateStatus();
       return;
     }
+    if (file.loaded === false) {
+      showLoadingFile(file);
+      return;
+    }
+    els.editor.disabled = false;
     if (els.editor.value !== file.content) {
       els.editor.value = file.content;
     }
     updateEditorDecorations();
     updateFindMatches();
     updateStatus();
+    renderTasks();
+  }
+
+  function showLoadingFile(file) {
+    els.editor.disabled = true;
+    els.editor.value = `Loading ${file.name}...`;
+    els.highlight.textContent = els.editor.value;
+    els.minimap.textContent = "";
+    updateLineNumbers(els.editor.value);
+    updateStatus();
+  }
+
+  async function ensureFileLoaded(file) {
+    if (!file || file.loaded !== false || !file.nativePath || !hasNativeBridge()) {
+      if (file) file.loaded = true;
+      return;
+    }
+
+    try {
+      const result = await nativeRequest("readFile", { nativePath: file.nativePath });
+      file.content = result.content || "";
+      file.savedContent = typeof result.savedContent === "string" ? result.savedContent : file.content;
+      file.loaded = true;
+      file.dirty = file.content !== file.savedContent;
+    } catch (error) {
+      if (error.message !== "cancelled") showToast(`Could not load ${file.name}`);
+      file.loaded = true;
+    } finally {
+      els.editor.disabled = false;
+    }
   }
 
   function updateEditorDecorations() {
     const file = getActiveFile();
     const code = els.editor.value;
     const language = file ? file.language : "text";
-    const html = highlightCode(code, language);
+    const marksKey = JSON.stringify(file ? file.keywordMarks || [] : []);
+    let html;
+    if (file && file.decorationCache && file.decorationCache.content === code && file.decorationCache.language === language && file.decorationCache.marksKey === marksKey) {
+      html = file.decorationCache.html;
+    } else {
+      html = code.length > 250000 ? decorateText(code) : highlightCode(code, language);
+      if (file) file.decorationCache = { content: code, language, marksKey, html };
+    }
     const trailing = code.endsWith("\n") ? " " : "";
     els.highlight.innerHTML = html + trailing;
-    els.minimap.innerHTML = html;
+    els.minimap.textContent = code.slice(0, 60000);
     updateLineNumbers(code);
     syncScroll();
+  }
+
+  function requestEditorDecorations(delay = 90) {
+    window.clearTimeout(state.decorationTimer);
+    if (state.decorationFrame) window.cancelAnimationFrame(state.decorationFrame);
+    state.decorationTimer = window.setTimeout(() => {
+      state.decorationFrame = window.requestAnimationFrame(() => {
+        state.decorationFrame = 0;
+        updateEditorDecorations();
+      });
+    }, delay);
   }
 
   function updateLineNumbers(code) {
@@ -715,7 +825,9 @@
       if (state.tabs.length < 6) state.tabs.push(file.path);
     });
     state.activePath = state.tabs[0] || entries[0].path;
-    renderAll();
+    renderTree();
+    renderTabs();
+    activateFile(state.activePath);
     persistWorkspace();
   }
 
@@ -737,7 +849,9 @@
       if (!state.tabs.includes(file.path)) state.tabs.push(file.path);
     });
     state.activePath = entries[0] ? normalizePath(entries[0].path) : state.activePath;
-    renderAll();
+    renderTree();
+    renderTabs();
+    activateFile(state.activePath);
     persistWorkspace();
   }
 
@@ -880,21 +994,162 @@
     const file = getActiveFile();
     if (!file) return;
     const path = nextAvailablePath(file.path);
-    addFile({ path, content: file.content, savedContent: file.content });
+    addFile({
+      path,
+      content: file.content,
+      savedContent: file.content,
+      tasks: file.tasks ? file.tasks.map((task) => ({ ...task, id: `${Date.now()}-${Math.random().toString(16).slice(2)}` })) : [],
+      keywordMarks: file.keywordMarks ? file.keywordMarks.map((mark) => ({ ...mark })) : []
+    });
     activateFile(path);
   }
 
   async function deleteActiveFile() {
     const file = getActiveFile();
     if (!file) return;
+    await deleteFilePath(file.path);
+  }
+
+  async function deleteFilePath(path) {
+    const file = state.files.get(path);
+    if (!file) return;
     const ok = await askConfirm(`Remove ${file.path} from this workspace?`);
     if (!ok) return;
-    const path = file.path;
     state.files.delete(path);
     state.tabs = state.tabs.filter((item) => item !== path);
     state.activePath = state.tabs[0] || Array.from(state.files.keys())[0] || "";
     renderAll();
     persistWorkspace();
+  }
+
+  function showFileMenu(path, x, y) {
+    state.contextPath = path;
+    els.fileMenu.style.left = `${Math.min(x, window.innerWidth - 170)}px`;
+    els.fileMenu.style.top = `${Math.min(y, window.innerHeight - 120)}px`;
+    els.fileMenu.hidden = false;
+  }
+
+  function hideFileMenu() {
+    state.contextPath = "";
+    els.fileMenu.hidden = true;
+  }
+
+  async function runFileAction(action) {
+    const path = state.contextPath;
+    hideFileMenu();
+    if (!path || !state.files.has(path)) return;
+    await activateFile(path);
+    if (action === "rename") renameActiveFile();
+    if (action === "duplicate") duplicateActiveFile();
+    if (action === "delete") deleteFilePath(path);
+  }
+
+  function toggleTasks(force) {
+    state.tasksOpen = typeof force === "boolean" ? force : !state.tasksOpen;
+    els.taskPanel.hidden = !state.tasksOpen;
+    renderTasks();
+    if (state.tasksOpen) setTimeout(() => els.taskInput.focus(), 0);
+  }
+
+  function renderTasks() {
+    const file = getActiveFile();
+    if (!file) {
+      els.taskList.replaceChildren();
+      return;
+    }
+
+    const tasks = file.tasks || [];
+    els.taskList.replaceChildren();
+    if (!tasks.length) {
+      const empty = document.createElement("div");
+      empty.className = "task-empty";
+      empty.textContent = "No tasks for this page";
+      els.taskList.append(empty);
+      return;
+    }
+
+    tasks.forEach((task) => {
+      const row = document.createElement("label");
+      row.className = `task-row${task.done ? " done" : ""}`;
+
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.checked = Boolean(task.done);
+      checkbox.addEventListener("change", () => {
+        task.done = checkbox.checked;
+        persistSoon();
+        renderTasks();
+      });
+
+      const text = document.createElement("span");
+      text.textContent = task.text;
+
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "task-remove";
+      remove.textContent = "x";
+      remove.setAttribute("aria-label", "Delete task");
+      remove.addEventListener("click", (event) => {
+        event.preventDefault();
+        file.tasks = tasks.filter((item) => item.id !== task.id);
+        persistSoon();
+        renderTasks();
+      });
+
+      row.append(checkbox, text, remove);
+      els.taskList.append(row);
+    });
+  }
+
+  function addTask() {
+    const file = getActiveFile();
+    if (!file) return;
+    const text = els.taskInput.value.trim();
+    if (!text) return;
+    file.tasks = file.tasks || [];
+    file.tasks.push({ id: `${Date.now()}-${Math.random().toString(16).slice(2)}`, text, done: false });
+    els.taskInput.value = "";
+    persistSoon();
+    renderTasks();
+  }
+
+  function markSelectedKeyword() {
+    const file = getActiveFile();
+    if (!file || file.loaded === false) return;
+    const selected = els.editor.value.slice(els.editor.selectionStart, els.editor.selectionEnd).trim();
+    if (!selected) {
+      showToast("Select a keyword first");
+      return;
+    }
+    if (selected.length > 80 || /\n/.test(selected)) {
+      showToast("Select one short keyword");
+      return;
+    }
+
+    file.keywordMarks = file.keywordMarks || [];
+    const existingIndex = file.keywordMarks.findIndex((mark) => mark.text === selected);
+    if (existingIndex >= 0) {
+      file.keywordMarks.splice(existingIndex, 1);
+      showToast(`Removed color from ${selected}`);
+    } else {
+      const className = markClasses[file.keywordMarks.length % markClasses.length];
+      file.keywordMarks.push({ text: selected, className });
+      showToast(`Colored ${selected}`);
+    }
+
+    file.decorationCache = null;
+    updateEditorDecorations();
+    persistSoon();
+  }
+
+  function clearKeywordMarks() {
+    const file = getActiveFile();
+    if (!file) return;
+    file.keywordMarks = [];
+    file.decorationCache = null;
+    updateEditorDecorations();
+    persistSoon();
+    showToast("Keyword colors cleared");
   }
 
   function toggleWrap() {
@@ -1022,6 +1277,7 @@
     els.editor.setSelectionRange(safeCursor, safeCursor);
     file.content = value;
     file.dirty = file.content !== file.savedContent;
+    file.decorationCache = null;
     updateEditorDecorations();
     renderTabs();
     renderTree();
@@ -1345,7 +1601,7 @@
     if (language === "html") return highlightHtml(code);
     if (language === "markdown") return highlightMarkdown(code);
     if (language === "python") return highlightPython(code);
-    return escapeHtml(code);
+    return decorateText(code);
   }
 
   function highlightWithRegex(code, regex, classify) {
@@ -1353,12 +1609,12 @@
     let lastIndex = 0;
     code.replace(regex, (match, ...args) => {
       const offset = args[args.length - 2];
-      output += escapeHtml(code.slice(lastIndex, offset));
-      output += `<span class="${classify(match, offset, code)}">${escapeHtml(match)}</span>`;
+      output += decorateText(code.slice(lastIndex, offset));
+      output += `<span class="${classify(match, offset, code)}">${decorateText(match)}</span>`;
       lastIndex = offset + match.length;
       return match;
     });
-    output += escapeHtml(code.slice(lastIndex));
+    output += decorateText(code.slice(lastIndex));
     return output;
   }
 
@@ -1428,13 +1684,38 @@
 
   function highlightMarkdown(code) {
     return code.split("\n").map((line) => {
-      if (/^#{1,6}\s/.test(line)) return `<span class="token-heading">${escapeHtml(line)}</span>`;
-      let output = escapeHtml(line);
-      output = output.replace(/(`[^`]+`)/g, '<span class="token-string">$1</span>');
-      output = output.replace(/(\*\*[^*]+\*\*)/g, '<span class="token-emphasis">$1</span>');
-      output = output.replace(/^(\s*[-*]\s)/, '<span class="token-keyword">$1</span>');
+      if (/^#{1,6}\s/.test(line)) return `<span class="token-heading">${decorateText(line)}</span>`;
+      let output = decorateText(line);
+      if (!getKeywordMarks().length) {
+        output = output.replace(/(`[^`]+`)/g, '<span class="token-string">$1</span>');
+        output = output.replace(/(\*\*[^*]+\*\*)/g, '<span class="token-emphasis">$1</span>');
+        output = output.replace(/^(\s*[-*]\s)/, '<span class="token-keyword">$1</span>');
+      }
       return output;
     }).join("\n");
+  }
+
+  function decorateText(value) {
+    const marks = getKeywordMarks();
+    if (!marks.length || !value) return escapeHtml(value);
+    const pattern = marks.map((mark) => escapeRegExp(mark.text)).join("|");
+    const expression = new RegExp(pattern, "g");
+    let output = "";
+    let lastIndex = 0;
+    value.replace(expression, (match, offset) => {
+      output += escapeHtml(value.slice(lastIndex, offset));
+      const mark = marks.find((item) => item.text === match) || marks[0];
+      output += `<span class="keyword-mark ${mark.className}">${escapeHtml(match)}</span>`;
+      lastIndex = offset + match.length;
+      return match;
+    });
+    output += escapeHtml(value.slice(lastIndex));
+    return output;
+  }
+
+  function getKeywordMarks() {
+    const file = getActiveFile();
+    return file && Array.isArray(file.keywordMarks) ? file.keywordMarks.filter((mark) => mark.text) : [];
   }
 
   function escapeHtml(value) {
