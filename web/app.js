@@ -1559,7 +1559,8 @@
   function updateSidebarState(shouldPersist = true) {
     els.shell.classList.toggle("sidebar-hidden", state.sidebarHidden);
     els.sidebar.hidden = state.sidebarHidden;
-    els.sidebarToggle.classList.toggle("active", !state.sidebarHidden);
+    els.sidebarToggle.querySelector("span").textContent = state.sidebarHidden ? ">" : "<";
+    els.sidebarToggle.setAttribute("aria-label", state.sidebarHidden ? "Show side panel" : "Hide side panel");
     els.sidebarToggle.setAttribute("aria-pressed", state.sidebarHidden ? "false" : "true");
     if (shouldPersist) persistWorkspace();
   }

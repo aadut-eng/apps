@@ -308,10 +308,40 @@ button {
   display: grid;
   grid-template-columns: 280px minmax(0, 1fr);
   min-height: 0;
+  position: relative;
 }
 
 .app-shell.sidebar-hidden .workspace {
   grid-template-columns: minmax(0, 1fr);
+}
+
+.sidebar-handle {
+  position: absolute;
+  left: 8px;
+  top: 6px;
+  z-index: 18;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--muted);
+  background: color-mix(in srgb, var(--panel) 88%, var(--editor-bg));
+  box-shadow: 0 8px 18px color-mix(in srgb, var(--shadow) 56%, transparent);
+}
+
+.sidebar-handle:hover,
+.sidebar-handle:focus-visible {
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--accent) 42%, transparent);
+  background: var(--panel-strong);
+  outline: none;
+}
+
+.sidebar-handle span {
+  font-weight: 800;
+  line-height: 1;
 }
 
 .sidebar {
@@ -331,18 +361,12 @@ button {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 0 10px 0 14px;
+  padding: 0 10px 0 44px;
   border-bottom: 1px solid var(--border);
   color: var(--muted);
   font-size: 0.78rem;
   font-weight: 760;
   text-transform: uppercase;
-}
-
-.sidebar-actions {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
 }
 
 .tiny-button {
@@ -513,6 +537,10 @@ button {
   background: var(--panel);
   border-bottom: 1px solid var(--border);
   scrollbar-width: thin;
+}
+
+.app-shell.sidebar-hidden .tabs {
+  padding-left: 44px;
 }
 
 .tab-button {
@@ -1208,7 +1236,8 @@ button {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .sidebar {
+  .sidebar,
+  .sidebar-handle {
     display: none;
   }
 
