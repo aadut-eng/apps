@@ -47,6 +47,9 @@ button {
   --shadow: rgba(0, 0, 0, 0.45);
   --editor-bg: #1b1c1f;
   --editor-text: #f4f1e8;
+  --editor-font-size: 14px;
+  --editor-font-weight: 400;
+  --editor-font-style: normal;
   --caret: #f8c555;
   --line: #3b3c40;
   --selection: rgba(248, 197, 85, 0.22);
@@ -155,6 +158,50 @@ button {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.format-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 30px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel-soft);
+}
+
+.format-button {
+  display: grid;
+  place-items: center;
+  min-width: 28px;
+  height: 24px;
+  padding: 0 6px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  color: var(--muted);
+  background: transparent;
+  font-size: 0.78rem;
+  font-weight: 760;
+  line-height: 1;
+}
+
+.format-button.italic {
+  font-style: italic;
+}
+
+.format-button:hover,
+.format-button:focus-visible,
+.format-button.active {
+  color: var(--text);
+  background: var(--panel-strong);
+  border-color: var(--border);
+  outline: none;
+}
+
+.format-button.active {
+  background: color-mix(in srgb, var(--accent) 18%, var(--panel-strong));
+  border-color: color-mix(in srgb, var(--accent) 42%, transparent);
 }
 
 .action-button,
@@ -682,7 +729,9 @@ button {
 .highlight-layer,
 #editor {
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
-  font-size: 14px;
+  font-size: var(--editor-font-size);
+  font-weight: var(--editor-font-weight);
+  font-style: var(--editor-font-style);
   line-height: 1.55;
   tab-size: 2;
   letter-spacing: 0;
@@ -1093,7 +1142,7 @@ button {
 
 @media (max-width: 760px) {
   .app-shell {
-    grid-template-rows: 78px minmax(0, 1fr) 28px;
+    grid-template-rows: 106px minmax(0, 1fr) 28px;
   }
 
   .topbar {
@@ -1109,7 +1158,14 @@ button {
   }
 
   .top-right {
-    margin-left: auto;
+    order: 2;
+    flex-basis: 100%;
+    justify-content: flex-end;
+    margin-left: 0;
+  }
+
+  .theme-select span {
+    display: none;
   }
 
   .workspace {

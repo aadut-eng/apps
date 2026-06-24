@@ -3,6 +3,9 @@
 
   const STORAGE_KEY = "myeditor.workspace.v1";
   const IGNORED_DIRECTORIES = new Set([".git", "node_modules", "dist", "build", ".next", ".cache"]);
+  const DEFAULT_FONT_SIZE = 14;
+  const MIN_FONT_SIZE = 10;
+  const MAX_FONT_SIZE = 28;
 
   const els = {
     shell: document.querySelector(".app-shell"),
@@ -16,6 +19,8 @@
     fileInput: document.getElementById("fileInput"),
     importInput: document.getElementById("importInput"),
     themeSelect: document.getElementById("themeSelect"),
+    boldButton: document.getElementById("boldButton"),
+    italicButton: document.getElementById("italicButton"),
     findBar: document.getElementById("findBar"),
     findInput: document.getElementById("findInput"),
     replaceInput: document.getElementById("replaceInput"),
@@ -47,6 +52,9 @@
     tabs: [],
     activePath: "",
     wrap: false,
+    editorFontSize: DEFAULT_FONT_SIZE,
+    editorBold: false,
+    editorItalic: false,
     paletteMode: "commands",
     paletteItems: [],
     paletteIndex: 0,
@@ -170,6 +178,11 @@
     { id: "quick-open", title: "Quick Open", meta: "Navigate", run: () => openPalette("files") },
     { id: "command-palette", title: "Command Palette", meta: "Navigate", run: () => openPalette("commands") },
     { id: "toggle-wrap", title: "Toggle Word Wrap", meta: "View", run: toggleWrap },
+    { id: "increase-font", title: "Increase Font Size", meta: "View", run: () => changeEditorFontSize(1) },
+    { id: "decrease-font", title: "Decrease Font Size", meta: "View", run: () => changeEditorFontSize(-1) },
+    { id: "reset-font", title: "Reset Font Size", meta: "View", run: resetEditorFontSize },
+    { id: "toggle-bold", title: "Toggle Bold Text", meta: "View", run: toggleEditorBold },
+    { id: "toggle-italic", title: "Toggle Italic Text", meta: "View", run: toggleEditorItalic },
     { id: "theme-monokai", title: "Theme: Monokai", meta: "View", run: () => setTheme("monokai") },
     { id: "theme-paper", title: "Theme: Paper", meta: "View", run: () => setTheme("paper") },
     { id: "theme-contrast", title: "Theme: Contrast", meta: "View", run: () => setTheme("contrast") },
@@ -188,6 +201,9 @@
 
   function bindEvents() {
     document.querySelectorAll("[data-command]").forEach((button) => {
+      if (button.hasAttribute("data-editor-format")) {
+        button.addEventListener("mousedown", (event) => event.preventDefault());
+      }
       button.addEventListener("click", () => runCommand(button.dataset.command));
     });
 
@@ -322,13 +338,20 @@
       state.tabs = saved.tabs && saved.tabs.length ? saved.tabs.filter((path) => state.files.has(path)) : [];
       state.activePath = state.files.has(saved.activePath) ? saved.activePath : "";
       state.wrap = Boolean(saved.wrap);
+      state.editorFontSize = clampFontSize(saved.editorFontSize);
+      state.editorBold = Boolean(saved.editorBold);
+      state.editorItalic = Boolean(saved.editorItalic);
       setTheme(saved.theme || "monokai", false);
     } else {
       samples.forEach((sample) => addFile(sample));
       state.tabs = samples.slice(0, 3).map((sample) => sample.path);
       state.activePath = samples[0].path;
+      state.editorFontSize = DEFAULT_FONT_SIZE;
+      state.editorBold = false;
+      state.editorItalic = false;
       setTheme("monokai", false);
     }
+    applyEditorTypography(false);
   }
 
   function readStoredWorkspace() {
@@ -357,6 +380,9 @@
       tabs: state.tabs,
       activePath: state.activePath,
       wrap: state.wrap,
+      editorFontSize: state.editorFontSize,
+      editorBold: state.editorBold,
+      editorItalic: state.editorItalic,
       theme: els.shell.dataset.theme
     };
     try {
@@ -1318,6 +1344,54 @@
     document.querySelector(".code-wrap").classList.toggle("wrap", state.wrap);
   }
 
+  function changeEditorFontSize(delta) {
+    const nextSize = clampFontSize(state.editorFontSize + delta);
+    if (nextSize === state.editorFontSize) {
+      showToast(delta > 0 ? "Maximum font size" : "Minimum font size");
+      return;
+    }
+    state.editorFontSize = nextSize;
+    applyEditorTypography();
+    showToast(`Font size ${state.editorFontSize}px`);
+  }
+
+  function resetEditorFontSize() {
+    state.editorFontSize = DEFAULT_FONT_SIZE;
+    applyEditorTypography();
+    showToast("Font size reset");
+  }
+
+  function toggleEditorBold() {
+    state.editorBold = !state.editorBold;
+    applyEditorTypography();
+    showToast(state.editorBold ? "Bold on" : "Bold off");
+  }
+
+  function toggleEditorItalic() {
+    state.editorItalic = !state.editorItalic;
+    applyEditorTypography();
+    showToast(state.editorItalic ? "Italic on" : "Italic off");
+  }
+
+  function applyEditorTypography(shouldPersist = true) {
+    state.editorFontSize = clampFontSize(state.editorFontSize);
+    els.shell.style.setProperty("--editor-font-size", `${state.editorFontSize}px`);
+    els.shell.style.setProperty("--editor-font-weight", state.editorBold ? "700" : "400");
+    els.shell.style.setProperty("--editor-font-style", state.editorItalic ? "italic" : "normal");
+    els.boldButton.classList.toggle("active", state.editorBold);
+    els.boldButton.setAttribute("aria-pressed", state.editorBold ? "true" : "false");
+    els.italicButton.classList.toggle("active", state.editorItalic);
+    els.italicButton.setAttribute("aria-pressed", state.editorItalic ? "true" : "false");
+    updateLineNumbers(els.editor.value);
+    syncScroll();
+    if (shouldPersist) persistWorkspace();
+  }
+
+  function clampFontSize(value) {
+    const size = Number.isFinite(Number(value)) ? Math.round(Number(value)) : DEFAULT_FONT_SIZE;
+    return Math.min(MAX_FONT_SIZE, Math.max(MIN_FONT_SIZE, size));
+  }
+
   function setTheme(theme, shouldPersist = true) {
     const value = ["monokai", "paper", "contrast"].includes(theme) ? theme : "monokai";
     els.shell.dataset.theme = value;
@@ -1417,8 +1491,13 @@
   function estimateScrollForOffset(offset) {
     const before = els.editor.value.slice(0, offset);
     const line = before.split("\n").length;
-    const lineHeight = 21.7;
+    const lineHeight = getEditorLineHeight();
     return Math.max(0, (line - 5) * lineHeight);
+  }
+
+  function getEditorLineHeight() {
+    const lineHeight = Number.parseFloat(window.getComputedStyle(els.editor).lineHeight);
+    return Number.isFinite(lineHeight) ? lineHeight : state.editorFontSize * 1.55;
   }
 
   function updateFindCount() {
@@ -1589,6 +1668,31 @@
     if (!mod) return;
 
     const key = event.key.toLowerCase();
+    if (key === "=" || key === "+") {
+      event.preventDefault();
+      changeEditorFontSize(1);
+      return;
+    }
+    if (key === "-") {
+      event.preventDefault();
+      changeEditorFontSize(-1);
+      return;
+    }
+    if (key === "0") {
+      event.preventDefault();
+      resetEditorFontSize();
+      return;
+    }
+    if (key === "b") {
+      event.preventDefault();
+      toggleEditorBold();
+      return;
+    }
+    if (key === "i") {
+      event.preventDefault();
+      toggleEditorItalic();
+      return;
+    }
     if (key === "s") {
       event.preventDefault();
       saveActiveFile(event.shiftKey);

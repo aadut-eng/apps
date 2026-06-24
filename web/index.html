@@ -25,6 +25,12 @@
         </nav>
 
         <div class="top-right">
+          <div class="format-controls" aria-label="Editor typography">
+            <button type="button" class="format-button" data-command="decrease-font" data-editor-format aria-label="Decrease font size">A-</button>
+            <button type="button" class="format-button" data-command="increase-font" data-editor-format aria-label="Increase font size">A+</button>
+            <button type="button" class="format-button bold" id="boldButton" data-command="toggle-bold" data-editor-format aria-label="Bold editor text" aria-pressed="false">B</button>
+            <button type="button" class="format-button italic" id="italicButton" data-command="toggle-italic" data-editor-format aria-label="Italic editor text" aria-pressed="false">I</button>
+          </div>
           <label class="theme-select">
             <span>Theme</span>
             <select id="themeSelect" aria-label="Theme">
