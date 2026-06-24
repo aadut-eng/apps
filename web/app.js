@@ -9,6 +9,8 @@
 
   const els = {
     shell: document.querySelector(".app-shell"),
+    sidebar: document.querySelector(".sidebar"),
+    sidebarToggle: document.getElementById("sidebarToggle"),
     tree: document.getElementById("tree"),
     tabs: document.getElementById("tabs"),
     editor: document.getElementById("editor"),
@@ -54,6 +56,7 @@
     tabs: [],
     activePath: "",
     wrap: false,
+    sidebarHidden: false,
     editorFontSize: DEFAULT_FONT_SIZE,
     editorBold: false,
     editorItalic: false,
@@ -181,6 +184,7 @@
     { id: "move-file-up", title: "Move File Up", meta: "Project", run: () => moveActiveFile(-1) },
     { id: "move-file-down", title: "Move File Down", meta: "Project", run: () => moveActiveFile(1) },
     { id: "find", title: "Find and Replace", meta: "Edit", run: openFind },
+    { id: "toggle-sidebar", title: "Toggle Side Panel", meta: "View", run: toggleSidebar },
     { id: "toggle-tasks", title: "Toggle Page Tasks", meta: "Page", run: toggleTasks },
     { id: "open-mark-menu", title: "Mark Menu", meta: "Page", run: openMarkMenu },
     { id: "mark-keyword", title: "Color Selected Keyword", meta: "Page", run: markSelectedKeyword },
@@ -359,6 +363,7 @@
       state.tabs = saved.tabs && saved.tabs.length ? saved.tabs.filter((path) => state.files.has(path)) : [];
       state.activePath = state.files.has(saved.activePath) ? saved.activePath : "";
       state.wrap = Boolean(saved.wrap);
+      state.sidebarHidden = Boolean(saved.sidebarHidden);
       state.editorFontSize = clampFontSize(saved.editorFontSize);
       state.editorBold = Boolean(saved.editorBold);
       state.editorItalic = Boolean(saved.editorItalic);
@@ -367,6 +372,7 @@
       samples.forEach((sample) => addFile(sample));
       state.tabs = samples.slice(0, 3).map((sample) => sample.path);
       state.activePath = samples[0].path;
+      state.sidebarHidden = false;
       state.editorFontSize = DEFAULT_FONT_SIZE;
       state.editorBold = false;
       state.editorItalic = false;
@@ -402,6 +408,7 @@
       tabs: state.tabs,
       activePath: state.activePath,
       wrap: state.wrap,
+      sidebarHidden: state.sidebarHidden,
       editorFontSize: state.editorFontSize,
       editorBold: state.editorBold,
       editorItalic: state.editorItalic,
@@ -621,6 +628,7 @@
     renderTabs();
     updateEditorFromState();
     updateWrapClass();
+    updateSidebarState(false);
   }
 
   function renderTree() {
@@ -1540,6 +1548,20 @@
 
   function updateWrapClass() {
     document.querySelector(".code-wrap").classList.toggle("wrap", state.wrap);
+  }
+
+  function toggleSidebar() {
+    state.sidebarHidden = !state.sidebarHidden;
+    updateSidebarState();
+    showToast(state.sidebarHidden ? "Side panel hidden" : "Side panel shown");
+  }
+
+  function updateSidebarState(shouldPersist = true) {
+    els.shell.classList.toggle("sidebar-hidden", state.sidebarHidden);
+    els.sidebar.hidden = state.sidebarHidden;
+    els.sidebarToggle.classList.toggle("active", !state.sidebarHidden);
+    els.sidebarToggle.setAttribute("aria-pressed", state.sidebarHidden ? "false" : "true");
+    if (shouldPersist) persistWorkspace();
   }
 
   function changeEditorFontSize(delta) {

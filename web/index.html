@@ -17,6 +17,7 @@
         <nav class="top-actions" aria-label="Editor actions">
           <button type="button" class="action-button" data-command="new-file">New</button>
           <button type="button" class="action-button" data-command="open-folder">Open</button>
+          <button type="button" class="action-button" id="sidebarToggle" data-command="toggle-sidebar" aria-pressed="true">Files</button>
           <button type="button" class="action-button" data-command="save-file">Save</button>
           <button type="button" class="action-button" data-command="find">Find</button>
           <button type="button" class="action-button" data-command="toggle-tasks">Tasks</button>
@@ -48,7 +49,10 @@
         <aside class="sidebar">
           <div class="sidebar-header">
             <span>Project</span>
-            <button type="button" class="tiny-button" data-command="new-file" aria-label="Add file">+</button>
+            <div class="sidebar-actions">
+              <button type="button" class="tiny-button" data-command="new-file" aria-label="Add file">+</button>
+              <button type="button" class="tiny-button" data-command="toggle-sidebar" aria-label="Hide side panel">&lt;</button>
+            </div>
           </div>
           <input id="fileFilter" class="file-filter" type="search" autocomplete="off" placeholder="Filter files" aria-label="Filter files">
           <div id="tree" class="tree" role="tree"></div>

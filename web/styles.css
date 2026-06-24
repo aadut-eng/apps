@@ -224,6 +224,7 @@ button {
 
 .action-button:hover,
 .action-button:focus-visible,
+.action-button.active,
 .mini-button:hover,
 .mini-button:focus-visible,
 .tiny-button:hover,
@@ -234,6 +235,12 @@ button {
   background: var(--panel-strong);
   border-color: var(--border);
   outline: none;
+}
+
+.action-button.active {
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--accent) 38%, transparent);
+  background: color-mix(in srgb, var(--accent) 14%, var(--panel-strong));
 }
 
 .theme-select {
@@ -303,6 +310,10 @@ button {
   min-height: 0;
 }
 
+.app-shell.sidebar-hidden .workspace {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .sidebar {
   min-height: 0;
   background: var(--panel-soft);
@@ -326,6 +337,12 @@ button {
   font-size: 0.78rem;
   font-weight: 760;
   text-transform: uppercase;
+}
+
+.sidebar-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .tiny-button {
